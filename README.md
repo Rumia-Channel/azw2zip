@@ -2,8 +2,7 @@
 
 KindleUnpackとDeDRM、DumpAZW6を改造してKindleの電子書籍(azw/azw3(あればresも))を画像のみの無圧縮zipかepubに変換するようにしたもの。  
 zipにした場合は画像ファイルのみが格納されます。(小説等テキストベースの書籍の場合は表紙と挿絵のみ)  
-azwはWindowsならキーファイル(k4i)がなければ作り、変換します。(多分Macもだけど環境がないので未確認)  
-Linux(WSLも)では各自キーファイル(k4i)を別途用意してこれと同じディレクトリにおいてください。  
+azwはキーファイル(k4i)がなければ作り、変換します。
 Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要です。
 
 ## Requirement
