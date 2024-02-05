@@ -10,6 +10,7 @@ Kindleは1.24以前のものをインストールした環境でないとダメ�
 ## Requirement
 * Python 2.7 or 3.8
 * pycrypto
+* lxml
 
 ## Usage
 ```bash
