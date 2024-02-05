@@ -6,20 +6,17 @@
 ■概要
 KindleUnpackとDeDRM、DumpAZW6を改造してKindleの電子書籍(azw/azw3(あればresも))を画像のみの無圧縮zipかepubに変換するようにしたもの。
 zipにした場合は画像ファイルのみが格納されます。(小説等テキストベースの書籍の場合は表紙と挿絵のみ)
-azwはWindowsならキーファイル(k4i)がなければ作り、変換します。(多分Macもだけど環境がないので未確認)
-Linux(WSLも)では各自キーファイル(k4i)を別途用意してこれと同じディレクトリにおいてください。
-Python 2.7かPython 3.8にpycryptoとlxmlを入れたものが動く環境が必要です。
-Kindleは1.24以前のものをインストールした環境でないとダメです。(DeDRMの仕様)
+azwはキーファイル(k4i)がなければ作り、変換します。
+Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要です。
 
 ■開発環境
-・Kindle 1.24
-・Python 2.7.17 & Python 3.8.2
+・Kindle 2.0
+・Python 3.10.5
   ・Windows10
-  ・WSL + Ubuntu 18.4 LTS
 で開発＆動作確認を行っています。
 
 ■使用方法
-各々の環境にPython 2.7かPython 3.8にpycryptoとlxmlを入れてazw2zip.pyに引数を渡して実行してください。
+各々の環境にPython 3.10にpycryptodomeとlxmlを入れてazw2zip.pyに引数を渡して実行してください。
 引数は、
 azw2zip [-zeftcod] <azw_indir> [outdir]
 
@@ -99,6 +96,7 @@ DeDRM - DeDRM_Plugin
 ・S-JISに存在しないUnicode文字の表示がWindows環境でエラーが出ないように対策。(k4mobidedrm.py)
 
 DumpAZW6
+・下記の変更点をDumpAZW6_py3.py に移植し置き換え(DumpAZW6_py3.py)
 ・外部から呼べるように関数を追加。(DumpAZW6_v01.py)
 ・受け付ける拡張子にresを追加。(DumpAZW6_v01.py)
 ・出力先を指定できるように変更。(DumpAZW6_v01.py)
@@ -120,7 +118,7 @@ DeDRM_tools 10.0.3
 https://github.com/noDRM/DeDRM_tools
 のDeDRM_Plugin
 
-DumpAZW6_v01.py
+DumpAZW6_py3.py
 https://gist.github.com/fireattack/99b7d9f6b2896cfa33944555d9e2a158
 
 KindleUnpack 0.82
@@ -153,6 +151,10 @@ PrintReplica書籍で作品名・作者名が正常でないものはamazon.co.j
 GNU General Public License v3.0
 
 ■履歴
+2023/02/05 v0.3改
+・DeDRM_pluginのバージョンをアップし、2.x でも利用できるように
+・DumpAZW6_v01.py を DumpAZW6_py3.py に置き換え
+
 2020/04/30 v.0.3
 ・Python3での実行に対応。
 ・-zでzipを出力できるように追加。
