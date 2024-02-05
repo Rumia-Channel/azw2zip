@@ -1,13 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import sys, os
 import locale
 import codecs
-
-PY2 = sys.version_info[0] == 2
-if PY2:
-    range = xrange
+import importlib
 
 # get sys.argv arguments and encode them into utf-8
 def unicode_argv():
@@ -38,18 +35,14 @@ def unicode_argv():
             # Remove Python executable and commands if present
             start = argc.value - len(sys.argv)
             return [argv[i] for i in
-                range(start, argc.value)]
+                    range(start, argc.value)]
         # if we don't have any arguments at all, just pass back script name
         # this should never happen
-        return [u"DeDRM.py"]
+        return ["DeDRM.py"]
     else:
-        argvencoding = sys.stdin.encoding
-        if argvencoding == None:
-            argvencoding = "utf-8"
-        if PY2:
-            return [arg if (type(arg) == unicode) else unicode(arg,argvencoding) for arg in sys.argv]
-        else:
-            return sys.argv
+        argvencoding = sys.stdin.encoding or "utf-8"
+        return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
+
 
 def add_cp65001_codec():
   try:
@@ -65,7 +58,7 @@ def set_utf8_default_encoding():
     return
 
   # Regenerate setdefaultencoding.
-  reload(sys)
+  importlib.reload(sys)
   sys.setdefaultencoding('utf-8')
 
   for attr in dir(locale):

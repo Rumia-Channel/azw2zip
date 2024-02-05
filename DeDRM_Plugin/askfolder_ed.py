@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # vim:ts=4:sw=4:softtabstop=4:smarttab:expandtab
 
@@ -17,10 +17,10 @@
 # the rights to use, copy, modify, merge, publish, distribute, sublicense,
 # and/or sell copies of the Software, and to permit persons to whom the
 # Software is furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
@@ -28,6 +28,8 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
+
+# Adjusted for Python 3, September 2020
 
 """
 AskFolder(...) -- Ask the user to select a folder Windows specific
@@ -164,15 +166,15 @@ def AskFolder(
     def BrowseCallback(hwnd, uMsg, lParam, lpData):
         if uMsg == BFFM_INITIALIZED:
             if actionButtonLabel:
-                label = unicode(actionButtonLabel, errors='replace')
+                label = str(actionButtonLabel, errors='replace')
                 user32.SendMessageW(hwnd, BFFM_SETOKTEXT, 0, label)
             if cancelButtonLabel:
-                label = unicode(cancelButtonLabel, errors='replace')
+                label = str(cancelButtonLabel, errors='replace')
                 cancelButton = user32.GetDlgItem(hwnd, IDCANCEL)
                 if cancelButton:
                     user32.SetWindowTextW(cancelButton, label)
             if windowTitle:
-                title = unicode(windowTitle, erros='replace')
+                title = str(windowTitle, errors='replace')
                 user32.SetWindowTextW(hwnd, title)
             if defaultLocation:
                 user32.SendMessageW(hwnd, BFFM_SETSELECTIONW, 1, defaultLocation.replace('/', '\\'))
@@ -200,7 +202,7 @@ def AskFolder(
     if not pidl:
         result = None
     else:
-        path = LPCWSTR(u" " * (MAX_PATH+1))
+        path = LPCWSTR(" " * (MAX_PATH+1))
         shell32.SHGetPathFromIDListW(pidl, path)
         ole32.CoTaskMemFree(pidl)
         result = path.value

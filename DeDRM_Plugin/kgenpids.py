@@ -1,19 +1,18 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import with_statement
-from __future__ import print_function
-
 # kgenpids.py
-# Copyright © 2008-2017 Apprentice Harper et al.
+# Copyright © 2008-2020 Apprentice Harper et al.
 
 __license__ = 'GPL v3'
-__version__ = '2.1'
+__version__ = '3.0'
 
 # Revision history:
 #  2.0   - Fix for non-ascii Windows user names
 #  2.1   - Actual fix for non-ascii WIndows user names.
-#  x.x   - Return information needed for KFX decryption
+#  2.2   - Return information needed for KFX decryption
+#  3.0   - Python 3 for calibre 5.0
+
 
 import sys
 import os, csv
@@ -23,8 +22,6 @@ import re
 from struct import pack, unpack, unpack_from
 import traceback
 
-PY2 = sys.version_info[0] == 2
-
 class DrmException(Exception):
     pass
 
@@ -33,9 +30,9 @@ global charMap3
 global charMap4
 
 
-charMap1 = 'n5Pr6St7Uv8Wx9YzAb0Cd1Ef2Gh3Jk4M'
-charMap3 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-charMap4 = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'
+charMap1 = b'n5Pr6St7Uv8Wx9YzAb0Cd1Ef2Gh3Jk4M'
+charMap3 = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+charMap4 = b'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'
 
 # crypto digestroutines
 import hashlib
@@ -52,14 +49,15 @@ def SHA1(message):
 
 
 # Encode the bytes in data with the characters in map
+# data and map should be byte arrays
 def encode(data, map):
-    result = ''
+    result = b''
     for char in data:
-        value = ord(char)
+        value = char
         Q = (value ^ 0x80) // len(map)
         R = value % len(map)
-        result += map[Q]
-        result += map[R]
+        result += bytes([map[Q]])
+        result += bytes([map[R]])
     return result
 
 # Hash the bytes in data and then encode the digest with the characters in map
@@ -86,10 +84,7 @@ def decode(data,map):
 def getTwoBitsFromBitField(bitField,offset):
     byteNumber = offset // 4
     bitPosition = 6 - 2*(offset % 4)
-    if type(bitField) is str:
-        return ord(bitField[byteNumber]) >> bitPosition & 3
-    else:
-        return bitField[byteNumber] >> bitPosition & 3
+    return bitField[byteNumber] >> bitPosition & 3
 
 # Returns the six bits at offset from a bit field
 def getSixBitsFromBitField(bitField,offset):
@@ -100,9 +95,9 @@ def getSixBitsFromBitField(bitField,offset):
 # 8 bits to six bits encoding from hash to generate PID string
 def encodePID(hash):
     global charMap3
-    PID = ''
+    PID = b''
     for position in range (0,8):
-        PID += charMap3[getSixBitsFromBitField(hash,position)]
+        PID += bytes([charMap3[getSixBitsFromBitField(hash,position)]])
     return PID
 
 # Encryption table used to generate the device PID
@@ -123,10 +118,7 @@ def generatePidEncryptionTable() :
 def generatePidSeed(table,dsn) :
     value = 0
     for counter in range (0,4) :
-        if type(dsn) is str:
-            index = (ord(dsn[counter]) ^ value) &0xFF
-        else:
-            index = (dsn[counter] ^ value) &0xFF
+        index = (dsn[counter] ^ value) & 0xFF
         value = (value >> 8) ^ table[index]
     return value
 
@@ -134,22 +126,19 @@ def generatePidSeed(table,dsn) :
 def generateDevicePID(table,dsn,nbRoll):
     global charMap4
     seed = generatePidSeed(table,dsn)
-    pidAscii = ''
+    pidAscii = b''
     pid = [(seed >>24) &0xFF,(seed >> 16) &0xff,(seed >> 8) &0xFF,(seed) & 0xFF,(seed>>24) & 0xFF,(seed >> 16) &0xff,(seed >> 8) &0xFF,(seed) & 0xFF]
     index = 0
     for counter in range (0,nbRoll):
-        if type(dsn) is str:
-            pid[index] = pid[index] ^ ord(dsn[counter])
-        else:
-            pid[index] = pid[index] ^ dsn[counter]
+        pid[index] = pid[index] ^ dsn[counter]
         index = (index+1) %8
     for counter in range (0,8):
         index = ((((pid[counter] >>5) & 3) ^ pid[counter]) & 0x1f) + (pid[counter] >> 7)
-        pidAscii += charMap4[index]
+        pidAscii += bytes([charMap4[index]])
     return pidAscii
 
 def crc32(s):
-    return (~binascii.crc32(s.encode(encoding='utf-8'),-1))&0xFFFFFFFF
+    return (~binascii.crc32(s,-1))&0xFFFFFFFF
 
 # convert from 8 digit PID to 10 digit PID with checksum
 def checksumPid(s):
@@ -161,7 +150,7 @@ def checksumPid(s):
     for i in (0,1):
         b = crc & 0xff
         pos = (b // l) ^ (b % l)
-        res += charMap4[pos%l]
+        res += bytes([charMap4[pos%l]])
         crc >>= 8
     return res
 
@@ -171,27 +160,27 @@ def pidFromSerial(s, l):
     global charMap4
     crc = crc32(s)
     arr1 = [0]*l
-    for i in xrange(len(s)):
-        arr1[i%l] ^= ord(s[i])
+    for i in range(len(s)):
+        arr1[i%l] ^= s[i]
     crc_bytes = [crc >> 24 & 0xff, crc >> 16 & 0xff, crc >> 8 & 0xff, crc & 0xff]
-    for i in xrange(l):
+    for i in range(l):
         arr1[i] ^= crc_bytes[i&3]
-    pid = ""
-    for i in xrange(l):
+    pid = b""
+    for i in range(l):
         b = arr1[i] & 0xff
-        pid+=charMap4[(b >> 7) + ((b >> 5 & 3) ^ (b & 0x1f))]
+        pid += bytes([charMap4[(b >> 7) + ((b >> 5 & 3) ^ (b & 0x1f))]])
     return pid
 
 
 # Parse the EXTH header records and use the Kindle serial number to calculate the book pid.
 def getKindlePids(rec209, token, serialnum):
+    if isinstance(serialnum,str):
+        serialnum = serialnum.encode('utf-8')
+
     if rec209 is None:
         return [serialnum]
 
     pids=[]
-
-    if isinstance(serialnum,unicode):
-        serialnum = serialnum.encode('utf-8')
 
     # Compute book PID
     pidHash = SHA1(serialnum+rec209+token)
@@ -200,7 +189,7 @@ def getKindlePids(rec209, token, serialnum):
     pids.append(bookPID)
 
     # compute fixed pid for old pre 2.5 firmware update pid as well
-    kindlePID = pidFromSerial(serialnum, 7) + "*"
+    kindlePID = pidFromSerial(serialnum, 7) + b"*"
     kindlePID = checksumPid(kindlePID)
     pids.append(kindlePID)
 
@@ -217,73 +206,52 @@ def getK4Pids(rec209, token, kindleDatabase):
 
     try:
         # Get the kindle account token, if present
-        if type((kindleDatabase[1])['kindle.account.tokens']) is str:
-            kindleAccountToken = binascii.unhexlify((kindleDatabase[1])['kindle.account.tokens'])
-        else:
-            kindleAccountToken = (kindleDatabase[1])['kindle.account.tokens'].decode('hex')
+        kindleAccountToken = bytearray.fromhex((kindleDatabase[1])['kindle.account.tokens'])
 
     except KeyError:
-        kindleAccountToken=""
+        kindleAccountToken = b''
         pass
 
     try:
         # Get the DSN token, if present
-        if type((kindleDatabase[1])['DSN']) is str:
-            DSN = binascii.unhexlify((kindleDatabase[1])['DSN'])
-        else:
-            DSN = (kindleDatabase[1])['DSN'].decode('hex')
-        print(u"Got DSN key from database {0}".format(kindleDatabase[0]))
+        DSN = bytearray.fromhex((kindleDatabase[1])['DSN'])
+        print("Got DSN key from database {0}".format(kindleDatabase[0]))
     except KeyError:
         # See if we have the info to generate the DSN
         try:
             # Get the Mazama Random number
-            if type((kindleDatabase[1])['MazamaRandomNumber']) is str:
-                MazamaRandomNumber = binascii.unhexlify((kindleDatabase[1])['MazamaRandomNumber'])
-            else:
-                MazamaRandomNumber = (kindleDatabase[1])['MazamaRandomNumber'].decode('hex')
-            #print(u"Got MazamaRandomNumber from database {0}".format(kindleDatabase[0]))
+            MazamaRandomNumber = bytearray.fromhex((kindleDatabase[1])['MazamaRandomNumber'])
+            #print "Got MazamaRandomNumber from database {0}".format(kindleDatabase[0])
 
             try:
                 # Get the SerialNumber token, if present
-                if type((kindleDatabase[1])['SerialNumber']) is str:
-                    IDString = binascii.unhexlify((kindleDatabase[1])['SerialNumber'])
-                else:
-                    IDString = (kindleDatabase[1])['SerialNumber'].decode('hex')
-                print(u"Got SerialNumber from database {0}".format(kindleDatabase[0]))
+                IDString = bytearray.fromhex((kindleDatabase[1])['SerialNumber'])
+                print("Got SerialNumber from database {0}".format(kindleDatabase[0]))
             except KeyError:
                  # Get the IDString we added
-                if type((kindleDatabase[1])['IDString']) is str:
-                    IDString = binascii.unhexlify((kindleDatabase[1])['IDString'])
-                else:
-                    IDString = (kindleDatabase[1])['IDString'].decode('hex')
+                IDString = bytearray.fromhex((kindleDatabase[1])['IDString'])
 
             try:
                 # Get the UsernameHash token, if present
-                if type((kindleDatabase[1])['UsernameHash']) is str:
-                    encodedUsername = binascii.unhexlify((kindleDatabase[1])['UsernameHash'])
-                else:
-                    encodedUsername = (kindleDatabase[1])['UsernameHash'].decode('hex')
-                print(u"Got UsernameHash from database {0}".format(kindleDatabase[0]))
+                encodedUsername = bytearray.fromhex((kindleDatabase[1])['UsernameHash'])
+                print("Got UsernameHash from database {0}".format(kindleDatabase[0]))
             except KeyError:
                 # Get the UserName we added
-                if type((kindleDatabase[1])['UserName']) is str:
-                    UserName = binascii.unhexlify((kindleDatabase[1])['UserName'])
-                else:
-                    UserName = (kindleDatabase[1])['UserName'].decode('hex')
+                UserName = bytearray.fromhex((kindleDatabase[1])['UserName'])
                 # encode it
                 encodedUsername = encodeHash(UserName,charMap1)
-                #print(u"encodedUsername",encodedUsername.encode('hex'))
+                #print "encodedUsername",encodedUsername.encode('hex')
         except KeyError:
-            print(u"Keys not found in the database {0}.".format(kindleDatabase[0]))
+            print("Keys not found in the database {0}.".format(kindleDatabase[0]))
             return pids
 
         # Get the ID string used
         encodedIDString = encodeHash(IDString,charMap1)
-        #print u"encodedIDString",encodedIDString.encode('hex')
+        #print "encodedIDString",encodedIDString.encode('hex')
 
         # concat, hash and encode to calculate the DSN
         DSN = encode(SHA1(MazamaRandomNumber+encodedIDString+encodedUsername),charMap1)
-        #print u"DSN",DSN.encode('hex')
+        #print "DSN",DSN.encode('hex')
         pass
 
     if rec209 is None:
@@ -297,8 +265,6 @@ def getK4Pids(rec209, token, kindleDatabase):
     pids.append(devicePID)
 
     # Compute book PIDs
-    if not PY2:
-        token = token.encode(encoding='utf-8')
 
     # book pid
     pidHash = SHA1(DSN+kindleAccountToken+rec209+token)
@@ -330,16 +296,16 @@ def getPidList(md1, md2, serials=[], kDatabases=[]):
 
     for kDatabase in kDatabases:
         try:
-            pidlst.extend(getK4Pids(md1, md2, kDatabase))
+            pidlst.extend(map(bytes,getK4Pids(md1, md2, kDatabase)))
         except Exception as e:
-            print(u"Error getting PIDs from database {0}: {1}".format(kDatabase[0],e.args[0]))
+            print("Error getting PIDs from database {0}: {1}".format(kDatabase[0],e.args[0]))
             traceback.print_exc()
 
     for serialnum in serials:
         try:
-            pidlst.extend(getKindlePids(md1, md2, serialnum))
+            pidlst.extend(map(bytes,getKindlePids(md1, md2, serialnum)))
         except Exception as e:
-            print(u"Error getting PIDs from serial number {0}: {1}".format(serialnum ,e.args[0]))
+            print("Error getting PIDs from serial number {0}: {1}".format(serialnum ,e.args[0]))
             traceback.print_exc()
 
     return pidlst

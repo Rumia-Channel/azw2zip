@@ -1,9 +1,25 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Pascal implementation by lulzkabulz. Python translation by apprenticenaomi. DeDRM integration by anon.
-# BinaryIon.pas + DrmIon.pas + IonSymbols.pas
 
-from __future__ import with_statement
+# ion.py
+# Copyright © 2013-2020 Apprentice Harper et al.
+
+__license__ = 'GPL v3'
+__version__ = '3.0'
+
+# Revision history:
+#  Pascal implementation by lulzkabulz.
+#  BinaryIon.pas + DrmIon.pas + IonSymbols.pas
+#  1.0   - Python translation by apprenticenaomi.
+#  1.1   - DeDRM integration by anon.
+#  1.2   - Added pylzma import fallback
+#  1.3   - Fixed lzma support for calibre 4.6+
+#  2.0   - VoucherEnvelope v2/v3 support by apprenticesakuya.
+#  3.0   - Added Python 3 compatibility for calibre 5.0
+
+"""
+Decrypt Kindle KFX files.
+"""
 
 import collections
 import hashlib
@@ -12,28 +28,14 @@ import os
 import os.path
 import struct
 
-from Crypto.Cipher import AES
-from Crypto.Util.py3compat import bchr, bord
+from io import BytesIO
 
-# try:
-#     # lzma library from calibre 4.6.0 or later
-#     import calibre_lzma.lzma1 as calibre_lzma
-# except ImportError:
-#     calibre_lzma = None
-#     # lzma library from calibre 2.35.0 or later
-#     try:
-#         import lzma.lzma1 as calibre_lzma
-#     except ImportError:
-#         calibre_lzma = None
-#         try:
-#             import lzma
-#         except ImportError:
-#             # Need pip backports.lzma on Python <3.3
-#             try:
-#                 from backports import lzma
-#             except ImportError:
-#                 # Windows-friendly choice: pylzma wheels
-#                 import pylzma as lzma
+try:
+    from Cryptodome.Cipher import AES
+    from Cryptodome.Util.py3compat import bchr
+except ImportError:
+    from Crypto.Cipher import AES
+    from Crypto.Util.py3compat import bchr
 
 
 TID_NULL = 0
@@ -71,7 +73,7 @@ LEN_IS_VAR_LEN = 0xE
 LEN_IS_NULL = 0xF
 
 
-VERSION_MARKER = b"\x01\x00\xEA"
+VERSION_MARKER = [b"\x01", b"\x00", b"\xEA"]
 
 
 # asserts must always raise exceptions for proper functioning
@@ -329,7 +331,7 @@ class BinaryIonParser(object):
         b = self.stream.read(1)
         if len(b) < 1:
             return -1
-        b = bord(b)
+        b = ord(b)
         result = b >> 4
         ln = b & 0xF
 
@@ -354,13 +356,13 @@ class BinaryIonParser(object):
         return result
 
     def readvarint(self):
-        b = bord(self.read())
+        b = ord(self.read())
         negative = ((b & 0x40) != 0)
         result = (b & 0x3F)
 
         i = 0
         while (b & 0x80) == 0 and i < 4:
-            b = bord(self.read())
+            b = ord(self.read())
             result = (result << 7) | (b & 0x7F)
             i += 1
 
@@ -371,12 +373,12 @@ class BinaryIonParser(object):
         return result
 
     def readvaruint(self):
-        b = bord(self.read())
+        b = ord(self.read())
         result = (b & 0x7F)
 
         i = 0
         while (b & 0x80) == 0 and i < 4:
-            b = bord(self.read())
+            b = ord(self.read())
             result = (result << 7) | (b & 0x7F)
             i += 1
 
@@ -396,7 +398,7 @@ class BinaryIonParser(object):
         _assert(self.localremaining <= 8, "Decimal overflow")
 
         signed = False
-        b = [bord(x) for x in self.read(self.localremaining)]
+        b = [ord(x) for x in self.read(self.localremaining)]
         if (b[0] & 0x80) != 0:
             b[0] = b[0] & 0x7F
             signed = True
@@ -494,6 +496,8 @@ class BinaryIonParser(object):
 
         if table is not None:
             self.symbols.import_(table, min(maxid, len(table.symnames)))
+            if len(table.symnames) < maxid:
+                self.symbols.importunknown(name + "-unknown", maxid - len(table.symnames))
         else:
             self.symbols.importunknown(name, maxid)
 
@@ -561,7 +565,7 @@ class BinaryIonParser(object):
                 _assert(self.valuelen <= 4, "int too long: %d" % self.valuelen)
                 v = 0
                 for i in range(self.valuelen - 1, -1, -1):
-                    v = (v | (bord(self.read()) << (i * 8)))
+                    v = (v | (ord(self.read()) << (i * 8)))
 
                 if self.valuetid == TID_NEGINT:
                     self.value = -v
@@ -631,7 +635,7 @@ class BinaryIonParser(object):
 
         result = ""
         for i in b:
-            result += ("%02x " % bord(i))
+            result += ("%02x " % ord(i))
 
         if len(result) > 0:
             result = result[:-1]
@@ -714,7 +718,11 @@ SYM_NAMES = [ 'com.amazon.drm.Envelope@1.0',
               'com.amazon.drm.EnvelopeMetadata@2.0',
               'com.amazon.drm.EncryptedPage@2.0',
               'com.amazon.drm.PlainText@2.0', 'compression_algorithm',
-              'com.amazon.drm.Compressed@1.0', 'priority', 'refines']
+              'com.amazon.drm.Compressed@1.0', 'page_index_table',
+              ] + ['com.amazon.drm.VoucherEnvelope@%d.0' % n
+                   for n in list(range(2, 29)) + [
+                                   9708, 1031, 2069, 9041, 3646,
+                                   6052, 9479, 9888, 4648, 5683]]
 
 def addprottable(ion):
     ion.addtocatalog("ProtectedData", 1, SYM_NAMES)
@@ -729,15 +737,87 @@ def pkcs7pad(msg, blocklen):
 def pkcs7unpad(msg, blocklen):
     _assert(len(msg) % blocklen == 0)
 
-    paddinglen = bord(msg[-1])
+    paddinglen = msg[-1]
+
     _assert(paddinglen > 0 and paddinglen <= blocklen, "Incorrect padding - Wrong key")
     _assert(msg[-paddinglen:] == bchr(paddinglen) * paddinglen, "Incorrect padding - Wrong key")
 
     return msg[:-paddinglen]
 
 
+
+
+
+# every VoucherEnvelope version has a corresponding "word" and magic number, used in obfuscating the shared secret
+OBFUSCATION_TABLE = {
+    "V1":    (0x00, None),
+    "V2":    (0x05, b'Antidisestablishmentarianism'),
+    "V3":    (0x08, b'Floccinaucinihilipilification'),
+    "V4":    (0x07, b'>\x14\x0c\x12\x10-\x13&\x18U\x1d\x05Rlt\x03!\x19\x1b\x13\x04]Y\x19,\t\x1b'),
+    "V5":    (0x06, b'~\x18~\x16J\\\x18\x10\x05\x0b\x07\t\x0cZ\r|\x1c\x15\x1d\x11>,\x1b\x0e\x03"4\x1b\x01'),
+    "V6":    (0x09, b'3h\x055\x03[^>\x19\x1c\x08\x1b\rtm4\x02Rp\x0c\x16B\n'),
+    "V7":    (0x05, b'\x10\x1bJ\x18\nh!\x10"\x03>Z\'\r\x01]W\x06\x1c\x1e?\x0f\x13'),
+    "V8":    (0x09, b"K\x0c6\x1d\x1a\x17pO}Rk\x1d'w1^\x1f$\x1c{C\x02Q\x06\x1d`"),
+    "V9":    (0x05, b'X.\x0eW\x1c*K\x12\x12\t\n\n\x17Wx\x01\x02Yf\x0f\x18\x1bVXPi\x01'),
+    "V10":   (0x07, b'z3\n\x039\x12\x13`\x06=v,\x02MTK\x1e%}L\x1c\x1f\x15\x0c\x11\x02\x0c\n8\x17p'),
+    "V11":   (0x05, b'L=\nhVm\x07go\n6\x14\x06\x16L\r\x02\x0b\x0c\x1b\x04#p\t'),
+    "V12":   (0x06, b',n\x1d\rl\x13\x1c\x13\x16p\x14\x07U\x0c\x1f\x19w\x16\x16\x1d5T'),
+    "V13":   (0x07, b'I\x05\t\x08\x03r)\x01$N\x0fr3n\x0b062D\x0f\x13'),
+    "V14":   (0x05, b"\x03\x02\x1c9\x19\x15\x15q\x1057\x08\x16\x0cF\x1b.Fw\x01\x12\x03\x13\x02\x17S'hk6"),
+    "V15":   (0x0A, b'&,4B\x1dcI\x0bU\x03I\x07\x04\x1c\t\x05c\x07%ws\x0cj\t\x1a\x08\x0f'),
+    "V16":   (0x0A, b'\x06\x18`h,b><\x06PqR\x02Zc\x034\n\x16\x1e\x18\x06#e'),
+    "V17":   (0x07, b'y\r\x12\x08fw.[\x02\t\n\x13\x11\x0c\x11b\x1e8L\x10(\x13<Jx6c\x0f'),
+    "V18":   (0x07, b'I\x0b\x0e,\x19\x1aIa\x10s\x19g\\\x1b\x11!\x18yf\x0f\t\x1d7[bSp\x03'),
+    "V19":   (0x05, b'\n6>)N\x02\x188\x016s\x13\x14\x1b\x16jeN\n\x146\x04\x18\x1c\x0c\x19\x1f,\x02]'),
+    "V20":   (0x08, b'_\r\x01\x12]\\\x14*\x17i\x14\r\t!\x1e,~hZ\x12jK\x17\x1e*1'),
+    "V21":   (0x07, b'e\x1d\x19|\ty\x1di|N\x13\x0e\x04\x1bj<h\x13\x15k\x12\x08=\x1f\x16~\x13l'),
+    "V22":   (0x08, b'?\x17yi$k7Pc\tEo\x0c\x07\x07\t\x1f,*i\x12\x0cI0\x10I\x1a?2\x04'),
+    "V23":   (0x08, b'\x16+db\x13\x04\x18\rc%\x14\x17\x0f\x13F\x0c[\t9\x1ay\x01\x1eH'),
+    "V24":   (0x06, b'|6\\\x1a\r\x10\nP\x07\x0fu\x1f\t,\rr`uv\\~55\x11]N'),
+    "V25":   (0x09, b'\x07\x14w\x1e,^y\x01:\x08\x07\x1fr\tU#j\x16\x12\x1eB\x04\x16=\x06fZ\x07\x02\x06'),
+    "V26":   (0x06, b'\x03IL\x1e"K\x1f\x0f\x1fp0\x01`X\x02z0`\x03\x0eN\x07'),
+    "V27":   (0x07, b'Xk\x10y\x02\x18\x10\x17\x1d,\x0e\x05e\x10\x15"e\x0fh(\x06s\x1c\x08I\x0c\x1b\x0e'),
+    "V28":   (0x0A, b'6P\x1bs\x0f\x06V.\x1cM\x14\x02\n\x1b\x07{P0:\x18zaU\x05'),
+    "V9708": (0x05, b'\x1diIm\x08a\x17\x1e!am\x1d\x1aQ.\x16!\x06*\}x04\x11\t\x06\x04?'),
+    "V1031": (0x08, b'Antidisestablishmentarianism'),
+    "V2069": (0x07, b'Floccinaucinihilipilification'),
+    "V9041": (0x06, b'>\x14\x0c\x12\x10-\x13&\x18U\x1d\x05Rlt\x03!\x19\x1b\x13\x04]Y\x19,\t\x1b'),
+    "V3646": (0x09, b'~\x18~\x16J\\\x18\x10\x05\x0b\x07\t\x0cZ\r|\x1c\x15\x1d\x11>,\x1b\x0e\x03"4\x1b\x01'),
+    "V6052": (0x05, b'3h\x055\x03[^>\x19\x1c\x08\x1b\rtm4\x02Rp\x0c\x16B\n'),
+    "V9479": (0x09, b'\x10\x1bJ\x18\nh!\x10"\x03>Z\'\r\x01]W\x06\x1c\x1e?\x0f\x13'),
+    "V9888": (0x05, b"K\x0c6\x1d\x1a\x17pO}Rk\x1d'w1^\x1f$\x1c{C\x02Q\x06\x1d`"),
+    "V4648": (0x07, b'X.\x0eW\x1c*K\x12\x12\t\n\n\x17Wx\x01\x02Yf\x0f\x18\x1bVXPi\x01'),
+    "V5683": (0x05, b'z3\n\x039\x12\x13`\x06=v,\x02MTK\x1e%}L\x1c\x1f\x15\x0c\x11\x02\x0c\n8\x17p'),
+}
+
+
+# obfuscate shared secret according to the VoucherEnvelope version
+def obfuscate(secret, version):
+    if version == 1:  # v1 does not use obfuscation
+        return secret
+
+    magic, word = OBFUSCATION_TABLE["V%d" % version]
+
+    # extend secret so that its length is divisible by the magic number
+    if len(secret) % magic != 0:
+        secret = secret + b'\x00' * (magic - len(secret) % magic)
+
+    secret = bytearray(secret)
+
+    obfuscated = bytearray(len(secret))
+    wordhash = bytearray(hashlib.sha256(word).digest())
+
+    # shuffle secret and xor it with the first half of the word hash
+    for i in range(0, len(secret)):
+        index = i // (len(secret) // magic) + magic * (i % (len(secret) // magic))
+        obfuscated[index] = secret[i] ^ wordhash[index % 16]
+
+    return obfuscated
+
+
 class DrmIonVoucher(object):
     envelope = None
+    version = None
     voucher = None
     drmkey = None
     license_type = "Unknown"
@@ -753,7 +833,13 @@ class DrmIonVoucher(object):
     secretkey = b""
 
     def __init__(self, voucherenv, dsn, secret):
-        self.dsn,self.secret = dsn,secret
+        self.dsn, self.secret = dsn, secret
+
+        if isinstance(dsn, str):
+            self.dsn = dsn.encode('ASCII')
+
+        if isinstance(secret, str):
+            self.secret = secret.encode('ASCII')
 
         self.lockparams = []
 
@@ -761,25 +847,25 @@ class DrmIonVoucher(object):
         addprottable(self.envelope)
 
     def decryptvoucher(self):
-        shared = "PIDv3" + self.encalgorithm + self.enctransformation + self.hashalgorithm
+        shared = ("PIDv3" + self.encalgorithm + self.enctransformation + self.hashalgorithm).encode('ASCII')
 
         self.lockparams.sort()
         for param in self.lockparams:
             if param == "ACCOUNT_SECRET":
-                shared += param + self.secret
+                shared += param.encode('ASCII') + self.secret
             elif param == "CLIENT_ID":
-                shared += param + self.dsn
+                shared += param.encode('ASCII') + self.dsn
             else:
                 _assert(False, "Unknown lock parameter: %s" % param)
 
-        sharedsecret = shared.encode("UTF-8")
+        sharedsecret = obfuscate(shared, self.version)
 
-        key = hmac.new(sharedsecret, sharedsecret[:5], digestmod=hashlib.sha256).digest()
+        key = hmac.new(sharedsecret, b"PIDv3", digestmod=hashlib.sha256).digest()
         aes = AES.new(key[:32], AES.MODE_CBC, self.cipheriv[:16])
         b = aes.decrypt(self.ciphertext)
         b = pkcs7unpad(b, 16)
 
-        self.drmkey = BinaryIonParser(StringIO(b))
+        self.drmkey = BinaryIonParser(BytesIO(b))
         addprottable(self.drmkey)
 
         _assert(self.drmkey.hasnext() and self.drmkey.next() == TID_LIST and self.drmkey.gettypename() == "com.amazon.drm.KeySet@1.0",
@@ -809,15 +895,16 @@ class DrmIonVoucher(object):
     def parse(self):
         self.envelope.reset()
         _assert(self.envelope.hasnext(), "Envelope is empty")
-        _assert(self.envelope.next() == TID_STRUCT and self.envelope.gettypename() == "com.amazon.drm.VoucherEnvelope@1.0",
+        _assert(self.envelope.next() == TID_STRUCT and str.startswith(self.envelope.gettypename(), "com.amazon.drm.VoucherEnvelope@"),
                 "Unknown type encountered in envelope, expected VoucherEnvelope")
+        self.version = int(self.envelope.gettypename().split('@')[1][:-2])
 
         self.envelope.stepin()
         while self.envelope.hasnext():
             self.envelope.next()
             field = self.envelope.getfieldname()
             if field == "voucher":
-                self.voucher = BinaryIonParser(StringIO(self.envelope.lobvalue()))
+                self.voucher = BinaryIonParser(BytesIO(self.envelope.lobvalue()))
                 addprottable(self.voucher)
                 continue
             elif field != "strategy":
@@ -938,6 +1025,7 @@ class DrmIon(object):
 
                 elif self.ion.gettypename() in ["com.amazon.drm.EncryptedPage@1.0", "com.amazon.drm.EncryptedPage@2.0"]:
                     decompress = False
+                    decrypt = True
                     ct = None
                     civ = None
                     self.ion.stepin()
@@ -951,7 +1039,23 @@ class DrmIon(object):
                             civ = self.ion.lobvalue()
 
                     if ct is not None and civ is not None:
-                        self.processpage(ct, civ, outpages, decompress)
+                        self.processpage(ct, civ, outpages, decompress, decrypt)
+                    self.ion.stepout()
+
+                elif self.ion.gettypename() in ["com.amazon.drm.PlainText@1.0", "com.amazon.drm.PlainText@2.0"]:
+                    decompress = False
+                    decrypt = False
+                    plaintext = None
+                    self.ion.stepin()
+                    while self.ion.hasnext():
+                        self.ion.next()
+                        if self.ion.gettypename() == "com.amazon.drm.Compressed@1.0":
+                            decompress = True
+                        if self.ion.getfieldname() == "data":
+                            plaintext = self.ion.lobvalue()
+
+                    if plaintext is not None:
+                        self.processpage(plaintext, None, outpages, decompress, decrypt)
                     self.ion.stepout()
 
             self.ion.stepout()
@@ -962,15 +1066,18 @@ class DrmIon(object):
     def print_(self, lst):
         self.ion.print_(lst)
 
-    def processpage(self, ct, civ, outpages, decompress):
-        aes = AES.new(self.key[:16], AES.MODE_CBC, civ[:16])
-        msg = pkcs7unpad(aes.decrypt(ct), 16)
+    def processpage(self, ct, civ, outpages, decompress, decrypt):
+        if decrypt:
+            aes = AES.new(self.key[:16], AES.MODE_CBC, civ[:16])
+            msg = pkcs7unpad(aes.decrypt(ct), 16)
+        else:
+            msg = ct
 
         if not decompress:
             outpages.write(msg)
             return
 
-        _assert(msg[0] == b"\x00", "LZMA UseFilter not supported")
+        _assert(msg[0] == 0, "LZMA UseFilter not supported")
 
         if calibre_lzma is not None:
             with calibre_lzma.decompress(msg[1:], bufsize=0x1000000) as f:

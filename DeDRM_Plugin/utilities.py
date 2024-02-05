@@ -1,9 +1,29 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import with_statement
 
-from ignoblekeygen import generate_key
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+# Explicitly set the package identifier so we are allowed to import stuff ...
+#__package__ = "DeDRM_plugin"
+
+#@@CALIBRE_COMPAT_CODE_END@@
+
+from ignoblekeyGenPassHash import generate_key
+import sys
 
 __license__ = 'GPL v3'
 
@@ -21,8 +41,13 @@ DETAILED_MESSAGE = \
 
 def uStrCmp (s1, s2, caseless=False):
     import unicodedata as ud
-    str1 = s1 if isinstance(s1, unicode) else unicode(s1)
-    str2 = s2 if isinstance(s2, unicode) else unicode(s2)
+    if sys.version_info[0] == 2:
+        str1 = s1 if isinstance(s1, unicode) else unicode(s1)
+        str2 = s2 if isinstance(s2, unicode) else unicode(s2)
+    else: 
+        str1 = s1 if isinstance(s1, str) else str(s1)
+        str2 = s2 if isinstance(s2, str) else str(s2)
+
     if caseless:
         return ud.normalize('NFC', str1.lower()) == ud.normalize('NFC', str2.lower())
     else:

@@ -1,4 +1,5 @@
-#! /usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 """
     Routines for doing AES CBC in one file
@@ -13,6 +14,8 @@
     CryptoPy Artisitic License Version 1.0
     See the wonderful pure python package cryptopy-1.2.5
     and read its LICENSE.txt for complete license details.
+
+    Adjusted for Python 3, September 2020
 """
 
 class CryptoError(Exception):
@@ -45,15 +48,7 @@ def xor(a,b):
     """ XOR two strings """
     x = []
     for i in range(min(len(a),len(b))):
-        if type(a) is str:
-            oa = ord(a[i])
-        else:
-            oa = a[i]
-        if type(b) is str:
-            ob = ord(b[i])
-        else:
-            ob = b[i]
-        x.append( chr(oa^ob))
+        x.append( chr(ord(a[i])^ord(b[i])))
     return ''.join(x)
 
 """
@@ -76,7 +71,7 @@ class BlockCipher:
         self.bytesToEncrypt = ''
     def resetDecrypt(self):
         self.decryptBlockCount = 0
-        self.bytesToDecrypt = b''
+        self.bytesToDecrypt = ''
 
     def encrypt(self, plainText, more = None):
         """ Encrypt a string and return a binary string """
@@ -184,8 +179,8 @@ class Rijndael(BlockCipher):
         assert( keySize%4==0 and keySize/4 in NrTable[4]),'key size must be 16,20,24,29 or 32 bytes'
         assert( blockSize%4==0 and blockSize/4 in NrTable), 'block size must be 16,20,24,29 or 32 bytes'
 
-        self.Nb = self.blockSize//4          # Nb is number of columns of 32 bit words
-        self.Nk = keySize//4                 # Nk is the key length in 32-bit words
+        self.Nb = self.blockSize/4          # Nb is number of columns of 32 bit words
+        self.Nk = keySize/4                 # Nk is the key length in 32-bit words
         self.Nr = NrTable[self.Nb][self.Nk] # The number of rounds (Nr) is a function of
                                             # the block (Nb) and key (Nk) sizes.
         if key != None:
@@ -229,10 +224,7 @@ class Rijndael(BlockCipher):
     def _toBlock(self, bs):
         """ Convert binary string to array of bytes, state[col][row]"""
         assert ( len(bs) == 4*self.Nb ), 'Rijndarl blocks must be of size blockSize'
-        if type(bs) is str:
-            return [[ord(bs[4*i]),ord(bs[4*i+1]),ord(bs[4*i+2]),ord(bs[4*i+3])] for i in range(self.Nb)]
-        else:
-            return [[(bs[4*i]),(bs[4*i+1]),(bs[4*i+2]),(bs[4*i+3])] for i in range(self.Nb)]
+        return [[ord(bs[4*i]),ord(bs[4*i+1]),ord(bs[4*i+2]),ord(bs[4*i+3])] for i in range(self.Nb)]
 
     def _toBString(self, block):
         """ Convert block (array of bytes) to binary string """
@@ -255,17 +247,14 @@ NrTable =  {4: {4:10,  5:11,  6:12,  7:13,  8:14},
 def keyExpansion(algInstance, keyString):
     """ Expand a string of size keySize into a larger array """
     Nk, Nb, Nr = algInstance.Nk, algInstance.Nb, algInstance.Nr # for readability
-    if type(keyString) is str:
-        key = [ord(byte) for byte in keyString]  # convert string to list
-    else:
-        key = [byte for byte in keyString]  # convert string to list
+    key = [ord(byte) for byte in keyString]  # convert string to list
     w = [[key[4*i],key[4*i+1],key[4*i+2],key[4*i+3]] for i in range(Nk)]
     for i in range(Nk,Nb*(Nr+1)):
         temp = w[i-1]        # a four byte column
         if (i%Nk) == 0 :
             temp     = temp[1:]+[temp[0]]  # RotWord(temp)
             temp     = [ Sbox[byte] for byte in temp ]
-            temp[0] ^= Rcon[i//Nk]
+            temp[0] ^= Rcon[i/Nk]
         elif Nk > 6 and  i%Nk == 4 :
             temp     = [ Sbox[byte] for byte in temp ]  # SubWord(temp)
         w.append( [ w[i-Nk][byte]^temp[byte] for byte in range(4) ] )

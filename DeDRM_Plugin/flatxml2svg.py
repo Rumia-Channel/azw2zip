@@ -12,7 +12,7 @@ from struct import unpack
 class PParser(object):
     def __init__(self, gd, flatxml, meta_array):
         self.gd = gd
-        self.flatdoc = flatxml.split('\n')
+        self.flatdoc = flatxml.split(b'\n')
         self.docSize = len(self.flatdoc)
         self.temp = []
 
@@ -58,11 +58,11 @@ class PParser(object):
     def lineinDoc(self, pos) :
         if (pos >= 0) and (pos < self.docSize) :
             item = self.flatdoc[pos]
-            if item.find('=') >= 0:
-                (name, argres) = item.split('=',1)
+            if item.find(b'=') >= 0:
+                (name, argres) = item.split(b'=',1)
             else :
                 name = item
-                argres = ''
+                argres = b''
         return name, argres
 
     # find tag in doc if within pos to end inclusive
@@ -73,13 +73,15 @@ class PParser(object):
         else:
             end = min(self.docSize, end)
         foundat = -1
-        for j in xrange(pos, end):
+        for j in range(pos, end):
             item = self.flatdoc[j]
-            if item.find('=') >= 0:
-                (name, argres) = item.split('=',1)
+            if item.find(b'=') >= 0:
+                (name, argres) = item.split(b'=',1)
             else :
                 name = item
-                argres = ''
+                argres = b''
+            if (isinstance(tagpath,str)):
+                tagpath = tagpath.encode('utf-8')
             if name.endswith(tagpath) :
                 result = argres
                 foundat = j
@@ -101,11 +103,11 @@ class PParser(object):
     def getData(self, path):
         result = None
         cnt = len(self.flatdoc)
-        for j in xrange(cnt):
+        for j in range(cnt):
             item = self.flatdoc[j]
-            if item.find('=') >= 0:
-                (name, argt) = item.split('=')
-                argres = argt.split('|')
+            if item.find(b'=') >= 0:
+                (name, argt) = item.split(b'=')
+                argres = argt.split(b'|')
             else:
                 name = item
                 argres = []
@@ -113,22 +115,24 @@ class PParser(object):
                 result = argres
                 break
         if (len(argres) > 0) :
-            for j in xrange(0,len(argres)):
+            for j in range(0,len(argres)):
                 argres[j] = int(argres[j])
         return result
 
     def getDataatPos(self, path, pos):
         result = None
         item = self.flatdoc[pos]
-        if item.find('=') >= 0:
-            (name, argt) = item.split('=')
-            argres = argt.split('|')
+        if item.find(b'=') >= 0:
+            (name, argt) = item.split(b'=')
+            argres = argt.split(b'|')
         else:
             name = item
             argres = []
         if (len(argres) > 0) :
-            for j in xrange(0,len(argres)):
+            for j in range(0,len(argres)):
                 argres[j] = int(argres[j])
+        if (isinstance(path,str)):
+            path = path.encode('utf-8')
         if (name.endswith(path)):
             result = argres
         return result
@@ -136,20 +140,22 @@ class PParser(object):
     def getDataTemp(self, path):
         result = None
         cnt = len(self.temp)
-        for j in xrange(cnt):
+        for j in range(cnt):
             item = self.temp[j]
-            if item.find('=') >= 0:
-                (name, argt) = item.split('=')
-                argres = argt.split('|')
+            if item.find(b'=') >= 0:
+                (name, argt) = item.split(b'=')
+                argres = argt.split(b'|')
             else:
                 name = item
                 argres = []
+            if (isinstance(path,str)):
+                path = path.encode('utf-8')
             if (name.endswith(path)):
                 result = argres
                 self.temp.pop(j)
                 break
         if (len(argres) > 0) :
-            for j in xrange(0,len(argres)):
+            for j in range(0,len(argres)):
                 argres[j] = int(argres[j])
         return result
 
@@ -220,15 +226,15 @@ def convert2SVG(gdict, flat_xml, pageid, previd, nextid, svgDir, raw, meta_array
     if (pp.gid != None):
         mlst.append('<defs>\n')
         gdefs = pp.getGlyphs()
-        for j in xrange(0,len(gdefs)):
+        for j in range(0,len(gdefs)):
             mlst.append(gdefs[j])
         mlst.append('</defs>\n')
     img = pp.getImages()
     if (img != None):
-        for j in xrange(0,len(img)):
+        for j in range(0,len(img)):
             mlst.append(img[j])
     if (pp.gid != None):
-        for j in xrange(0,len(pp.gid)):
+        for j in range(0,len(pp.gid)):
             mlst.append('<use xlink:href="#gl%d" x="%d" y="%d" />\n' % (pp.gid[j], pp.gx[j], pp.gy[j]))
     if (img == None or len(img) == 0) and (pp.gid == None or len(pp.gid) == 0):
         xpos = "%d" % (pp.pw // 3)

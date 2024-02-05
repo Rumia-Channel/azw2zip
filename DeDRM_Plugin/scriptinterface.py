@@ -1,19 +1,42 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # vim:ts=4:sw=4:softtabstop=4:smarttab:expandtab
 
-from __future__ import print_function
+
 import sys
 import os
+
+
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+# Explicitly set the package identifier so we are allowed to import stuff ...
+#__package__ = "DeDRM_plugin"
+
+#@@CALIBRE_COMPAT_CODE_END@@
+
+
 import re
+import traceback
 import ineptepub
-import ignobleepub
 import epubtest
 import zipfix
 import ineptpdf
 import erdr2pml
 import k4mobidedrm
-import traceback
 
 def decryptepub(infile, outdir, rscpath):
     errlog = ''
@@ -50,8 +73,8 @@ def decryptepub(infile, outdir, rscpath):
                     errlog += traceback.format_exc()
                     errlog += str(e)
                     rv = 1
-    # now try with ignoble epub
-    elif  ignobleepub.ignobleBook(zippath):
+        
+        # now try with ignoble epub
         # try with any keyfiles (*.b64) in the rscpath
         files = os.listdir(rscpath)
         filefilter = re.compile("\.b64$", re.IGNORECASE)
@@ -62,7 +85,7 @@ def decryptepub(infile, outdir, rscpath):
                 userkey = open(keypath,'r').read()
                 #print userkey
                 try:
-                    rv = ignobleepub.decryptBook(userkey, zippath, outfile)
+                    rv = ineptepub.decryptBook(userkey, zippath, outfile)
                     if rv == 0:
                         print("Decrypted B&N ePub with key file {0}".format(filename))
                         break
@@ -121,7 +144,7 @@ def decryptpdb(infile, outdir, rscpath):
     rv = 1
     socialpath = os.path.join(rscpath,'sdrmlist.txt')
     if os.path.exists(socialpath):
-        keydata = file(socialpath,'r').read()
+        keydata = open(socialpath,'r').read()
         keydata = keydata.rstrip(os.linesep)
         ar = keydata.split(',')
         for i in ar:
@@ -148,7 +171,7 @@ def decryptk4mobi(infile, outdir, rscpath):
     pidnums = []
     pidspath = os.path.join(rscpath,'pidlist.txt')
     if os.path.exists(pidspath):
-        pidstr = file(pidspath,'r').read()
+        pidstr = open(pidspath,'r').read()
         pidstr = pidstr.rstrip(os.linesep)
         pidstr = pidstr.strip()
         if pidstr != '':
@@ -156,7 +179,7 @@ def decryptk4mobi(infile, outdir, rscpath):
     serialnums = []
     serialnumspath = os.path.join(rscpath,'seriallist.txt')
     if os.path.exists(serialnumspath):
-        serialstr = file(serialnumspath,'r').read()
+        serialstr = open(serialnumspath,'r').read()
         serialstr = serialstr.rstrip(os.linesep)
         serialstr = serialstr.strip()
         if serialstr != '':

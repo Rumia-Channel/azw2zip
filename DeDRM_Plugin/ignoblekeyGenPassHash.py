@@ -1,43 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# ignoblekeyfetch.py
-# Copyright © 2015-2020 Apprentice Harper et al.
+# ignoblekeyGenPassHash.py
+# Copyright © 2009-2022 i♥cabbages, Apprentice Harper et al.
 
 # Released under the terms of the GNU General Public Licence, version 3
 # <http://www.gnu.org/licenses/>
 
-# Based on discoveries by "Nobody You Know"
-# Code partly based on ignoblekeygen.py by several people.
-
 # Windows users: Before running this program, you must first install Python.
-#   We recommend ActiveState Python 2.7.X for Windows from
+#   We recommend ActiveState Python 2.7.X for Windows (x86) from
 #   http://www.activestate.com/activepython/downloads.
-#   Then save this script file as ignoblekeyfetch.pyw and double-click on it to run it.
+#   You must also install PyCrypto from
+#   http://www.voidspace.org.uk/python/modules.shtml#pycrypto
+#   (make certain to install the version for Python 2.7).
+#   Then save this script file as ignoblekeygen.pyw and double-click on it to run it.
 #
-# Mac OS X users: Save this script file as ignoblekeyfetch.pyw.  You can run this
-#   program from the command line (python ignoblekeyfetch.pyw) or by double-clicking
+# Mac OS X users: Save this script file as ignoblekeygen.pyw.  You can run this
+#   program from the command line (python ignoblekeygen.pyw) or by double-clicking
 #   it when it has been associated with PythonLauncher.
 
 # Revision history:
-#   1.0 - Initial  version
-#   1.1 - Try second URL if first one fails
-#   2.0 - Python 3 for calibre 5.0
+#   1 - Initial release
+#   2 - Add OS X support by using OpenSSL when available (taken/modified from ineptepub v5)
+#   2.1 - Allow Windows versions of libcrypto to be found
+#   2.2 - On Windows try PyCrypto first and then OpenSSL next
+#   2.3 - Modify interface to allow use of import
+#   2.4 - Improvements to UI and now works in plugins
+#   2.5 - Additional improvement for unicode and plugin support
+#   2.6 - moved unicode_argv call inside main for Windows DeDRM compatibility
+#   2.7 - Work if TkInter is missing
+#   2.8 - Fix bug in stand-alone use (import tkFileDialog)
+#   3.0 - Added Python 3 compatibility for calibre 5.0
+#   3.1 - Remove OpenSSL support, only PyCryptodome is supported now
 
 """
-Fetch Barnes & Noble EPUB user key from B&N servers using email and password.
-
-NOTE: This script used to work in the past, but the server it uses is long gone.
-It can no longer be used to download keys from B&N servers, it is no longer
-supported by the Calibre plugin, and it will be removed in the future. 
-
+Generate Barnes & Noble EPUB user key from name and credit card number.
 """
 
 __license__ = 'GPL v3'
-__version__ = "2.0"
+__version__ = "3.1"
 
 import sys
 import os
+import hashlib
+import base64
+
+try:
+    from Cryptodome.Cipher import AES
+except ImportError:
+    from Crypto.Cipher import AES
 
 # Wrap a stream so that output gets flushed immediately
 # and also make sure that any unicode strings get
@@ -100,7 +111,7 @@ def unicode_argv():
                     range(start, argc.value)]
         # if we don't have any arguments at all, just pass back script name
         # this should never happen
-        return ["ignoblekeyfetch.py"]
+        return ["ignoblekeygen.py"]
     else:
         argvencoding = sys.stdin.encoding or "utf-8"
         return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
@@ -109,51 +120,29 @@ def unicode_argv():
 class IGNOBLEError(Exception):
     pass
 
-def fetch_key(email, password):
-    # change email and password to utf-8 if unicode
-    if type(email)==str:
-        email = email.encode('utf-8')
-    if type(password)==str:
-        password = password.encode('utf-8')
-
-    import random
-    random = "%030x" % random.randrange(16**30)
-
-    import urllib.parse, urllib.request, re
-
-    # try the URL from nook for PC
-    fetch_url = "https://cart4.barnesandnoble.com/services/service.aspx?Version=2&acctPassword="
-    fetch_url += urllib.parse.quote(password,'')+"&devID=PC_BN_2.5.6.9575_"+random+"&emailAddress="
-    fetch_url += urllib.parse.quote(email,"")+"&outFormat=5&schema=1&service=1&stage=deviceHashB"
-    #print fetch_url
-
-    found = ''
-    try:
-        response = urllib.request.urlopen(fetch_url)
-        the_page = response.read()
-        #print the_page
-        found = re.search('ccHash>(.+?)</ccHash', the_page).group(1)
-    except:
-        found = ''
-    if len(found)!=28:
-        # try the URL from android devices
-        fetch_url = "https://cart4.barnesandnoble.com/services/service.aspx?Version=2&acctPassword="
-        fetch_url += urllib.parse.quote(password,'')+"&devID=hobbes_9.3.50818_"+random+"&emailAddress="
-        fetch_url += urllib.parse.quote(email,"")+"&outFormat=5&schema=1&service=1&stage=deviceHashB"
-        #print fetch_url
-
-        found = ''
-        try:
-            response = urllib.request.urlopen(fetch_url)
-            the_page = response.read()
-            #print the_page
-            found = re.search('ccHash>(.+?)</ccHash', the_page).group(1)
-        except:
-            found = ''
-
-    return found
+def normalize_name(name):
+    return ''.join(x for x in name.lower() if x != ' ')
 
 
+def generate_key(name, ccn):
+    # remove spaces and case from name and CC numbers.
+    name = normalize_name(name)
+    ccn = normalize_name(ccn)
+
+    if type(name)==str:
+        name = name.encode('utf-8')
+    if type(ccn)==str:
+        ccn = ccn.encode('utf-8')
+
+    name = name + b'\x00'
+    ccn = ccn + b'\x00'
+
+    name_sha = hashlib.sha1(name).digest()[:16]
+    ccn_sha = hashlib.sha1(ccn).digest()[:16]
+    both_sha = hashlib.sha1(name + ccn).digest()
+    crypt = AES.new(ccn_sha, AES.MODE_CBC, name_sha).encrypt(both_sha + (b'\x0c' * 0x0c))
+    userkey = hashlib.sha1(crypt).digest()
+    return base64.b64encode(userkey)
 
 
 def cli_main():
@@ -162,23 +151,20 @@ def cli_main():
     argv=unicode_argv()
     progname = os.path.basename(argv[0])
     if len(argv) != 4:
-        print("usage: {0} <email> <password> <keyfileout.b64>".format(progname))
+        print("usage: {0} <Name> <CC#> <keyfileout.b64>".format(progname))
         return 1
-    email, password, keypath = argv[1:]
-    userkey = fetch_key(email, password)
-    if len(userkey) == 28:
-        open(keypath,'wb').write(userkey)
-        return 0
-    print("Failed to fetch key.")
-    return 1
+    name, ccn, keypath = argv[1:]
+    userkey = generate_key(name, ccn)
+    open(keypath,'wb').write(userkey)
+    return 0
 
 
 def gui_main():
     try:
         import tkinter
-        import tkinter.filedialog
         import tkinter.constants
         import tkinter.messagebox
+        import tkinter.filedialog
         import traceback
     except:
         return cli_main()
@@ -192,10 +178,10 @@ def gui_main():
             body.pack(fill=tkinter.constants.X, expand=1)
             sticky = tkinter.constants.E + tkinter.constants.W
             body.grid_columnconfigure(1, weight=2)
-            tkinter.Label(body, text="Account email address").grid(row=0)
+            tkinter.Label(body, text="Account Name").grid(row=0)
             self.name = tkinter.Entry(body, width=40)
             self.name.grid(row=0, column=1, sticky=sticky)
-            tkinter.Label(body, text="Account password").grid(row=1)
+            tkinter.Label(body, text="CC#").grid(row=1)
             self.ccn = tkinter.Entry(body, width=40)
             self.ccn.grid(row=1, column=1, sticky=sticky)
             tkinter.Label(body, text="Output file").grid(row=2)
@@ -207,7 +193,7 @@ def gui_main():
             buttons = tkinter.Frame(self)
             buttons.pack()
             botton = tkinter.Button(
-                buttons, text="Fetch", width=10, command=self.generate)
+                buttons, text="Generate", width=10, command=self.generate)
             botton.pack(side=tkinter.constants.LEFT)
             tkinter.Frame(buttons, width=10).pack(side=tkinter.constants.LEFT)
             button = tkinter.Button(
@@ -227,32 +213,29 @@ def gui_main():
             return
 
         def generate(self):
-            email = self.name.get()
-            password = self.ccn.get()
+            name = self.name.get()
+            ccn = self.ccn.get()
             keypath = self.keypath.get()
-            if not email:
-                self.status['text'] = "Email address not given"
+            if not name:
+                self.status['text'] = "Name not specified"
                 return
-            if not password:
-                self.status['text'] = "Account password not given"
+            if not ccn:
+                self.status['text'] = "Credit card number not specified"
                 return
             if not keypath:
-                self.status['text'] = "Output keyfile path not set"
+                self.status['text'] = "Output keyfile path not specified"
                 return
-            self.status['text'] = "Fetching..."
+            self.status['text'] = "Generating..."
             try:
-                userkey = fetch_key(email, password)
+                userkey = generate_key(name, ccn)
             except Exception as e:
-                self.status['text'] = "Error: {0}".format(e.args[0])
+                self.status['text'] = "Error: (0}".format(e.args[0])
                 return
-            if len(userkey) == 28:
-                open(keypath,'wb').write(userkey)
-                self.status['text'] = "Keyfile fetched successfully"
-            else:
-                self.status['text'] = "Keyfile fetch failed."
+            open(keypath,'wb').write(userkey)
+            self.status['text'] = "Keyfile successfully generated"
 
     root = tkinter.Tk()
-    root.title("Barnes & Noble ePub Keyfile Fetch v.{0}".format(__version__))
+    root.title("Barnes & Noble ePub Keyfile Generator v.{0}".format(__version__))
     root.resizable(True, False)
     root.minsize(300, 0)
     DecryptionDialog(root).pack(fill=tkinter.constants.X, expand=1)

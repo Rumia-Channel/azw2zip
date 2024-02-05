@@ -1,13 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # erdr2pml.py
-# Copyright © 2008 The Dark Reverser
+# Copyright © 2008-2022 The Dark Reverser, Apprentice Harper, noDRM et al.
 #
-# Modified 2008–2012 by some_updates, DiapDealer and Apprentice Alf
-
-# This is a python script. You need a Python interpreter to run it.
-# For example, ActiveState Python, which exists for windows.
 # Changelog
 #
 #  Based on ereader2html version 0.08 plus some later small fixes
@@ -67,16 +63,40 @@
 #       - Ignore sidebars for dictionaries (different format?)
 #  0.22 - Unicode and plugin support, different image folders for PMLZ and source
 #  0.23 - moved unicode_argv call inside main for Windows DeDRM compatibility
+#  1.00 - Added Python 3 compatibility for calibre 5.0
+#  1.01 - Bugfixes for standalone version.
+#  1.02 - Remove OpenSSL support; only use PyCryptodome
 
-__version__='0.23'
+__version__='1.02'
 
 import sys, re
-import struct, binascii, getopt, zlib, os, os.path, urllib, tempfile, traceback
+import struct, binascii, getopt, zlib, os, os.path, urllib, tempfile, traceback, hashlib
 
-if 'calibre' in sys.modules:
-    inCalibre = True
-else:
-    inCalibre = False
+try:
+    from Cryptodome.Cipher import DES
+except ImportError:
+    from Crypto.Cipher import DES
+
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+# Explicitly set the package identifier so we are allowed to import stuff ...
+#__package__ = "DeDRM_plugin"
+
+#@@CALIBRE_COMPAT_CODE_END@@
 
 # Wrap a stream so that output gets flushed immediately
 # and also make sure that any unicode strings get
@@ -88,10 +108,17 @@ class SafeUnbuffered:
         if self.encoding == None:
             self.encoding = "utf-8"
     def write(self, data):
-        if isinstance(data,unicode):
+        if isinstance(data,str) or isinstance(data,unicode):
+            # str for Python3, unicode for Python2
             data = data.encode(self.encoding,"replace")
-        self.stream.write(data)
-        self.stream.flush()
+        try:
+            buffer = getattr(self.stream, 'buffer', self.stream)
+            # self.stream.buffer for Python3, self.stream for Python2
+            buffer.write(data)
+            buffer.flush()
+        except:
+            # We can do nothing if a write fails
+            raise
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
 
@@ -126,68 +153,13 @@ def unicode_argv():
             # Remove Python executable and commands if present
             start = argc.value - len(sys.argv)
             return [argv[i] for i in
-                    xrange(start, argc.value)]
+                    range(start, argc.value)]
         # if we don't have any arguments at all, just pass back script name
         # this should never happen
-        return [u"mobidedrm.py"]
+        return ["mobidedrm.py"]
     else:
-        argvencoding = sys.stdin.encoding
-        if argvencoding == None:
-            argvencoding = "utf-8"
-        return [arg if (type(arg) == unicode) else unicode(arg,argvencoding) for arg in sys.argv]
-
-Des = None
-if iswindows:
-    # first try with pycrypto
-    if inCalibre:
-        from calibre_plugins.dedrm import pycrypto_des
-    else:
-        import pycrypto_des
-    Des = pycrypto_des.load_pycrypto()
-    if Des == None:
-        # they try with openssl
-        if inCalibre:
-            from calibre_plugins.dedrm import openssl_des
-        else:
-            import openssl_des
-        Des = openssl_des.load_libcrypto()
-else:
-    # first try with openssl
-    if inCalibre:
-        from calibre_plugins.dedrm import openssl_des
-    else:
-        import openssl_des
-    Des = openssl_des.load_libcrypto()
-    if Des == None:
-        # then try with pycrypto
-        if inCalibre:
-            from calibre_plugins.dedrm import pycrypto_des
-        else:
-            import pycrypto_des
-        Des = pycrypto_des.load_pycrypto()
-
-# if that did not work then use pure python implementation
-# of DES and try to speed it up with Psycho
-if Des == None:
-    if inCalibre:
-        from calibre_plugins.dedrm import python_des
-    else:
-        import python_des
-    Des = python_des.Des
-    # Import Psyco if available
-    try:
-        # http://psyco.sourceforge.net
-        import psyco
-        psyco.full()
-    except ImportError:
-        pass
-
-try:
-    from hashlib import sha1
-except ImportError:
-    # older Python release
-    import sha
-    sha1 = lambda s: sha.new(s)
+        argvencoding = sys.stdin.encoding or "utf-8"
+        return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
 
 import cgi
 import logging
@@ -200,17 +172,17 @@ class Sectionizer(object):
     bkType = "Book"
 
     def __init__(self, filename, ident):
-        self.contents = file(filename, 'rb').read()
+        self.contents = open(filename, 'rb').read()
         self.header = self.contents[0:72]
         self.num_sections, = struct.unpack('>H', self.contents[76:78])
         # Dictionary or normal content (TODO: Not hard-coded)
         if self.header[0x3C:0x3C+8] != ident:
-            if self.header[0x3C:0x3C+8] == "PDctPPrs":
+            if self.header[0x3C:0x3C+8] == b"PDctPPrs":
                 self.bkType = "Dict"
             else:
                 raise ValueError('Invalid file format')
         self.sections = []
-        for i in xrange(self.num_sections):
+        for i in range(self.num_sections):
             offset, a1,a2,a3,a4 = struct.unpack('>LBBBB', self.contents[78+i*8:78+i*8+8])
             flags, val = a1, a2<<16|a3<<8|a4
             self.sections.append( (offset, flags, val) )
@@ -229,29 +201,28 @@ class Sectionizer(object):
 # and with some (heavily edited) code from Paul Durrant's kindlenamer.py
 def sanitizeFileName(name):
     # substitute filename unfriendly characters
-    name = name.replace(u"<",u"[").replace(u">",u"]").replace(u" : ",u" – ").replace(u": ",u" – ").replace(u":",u"—").replace(u"/",u"_").replace(u"\\",u"_").replace(u"|",u"_").replace(u"\"",u"\'")
+    name = name.replace("<","[").replace(">","]").replace(" : "," – ").replace(": "," – ").replace(":","—").replace("/","_").replace("\\","_").replace("|","_").replace("\"","\'")
     # delete control characters
-    name = u"".join(char for char in name if ord(char)>=32)
+    name = "".join(char for char in name if ord(char)>=32)
     # white space to single space, delete leading and trailing while space
-    #name = re.sub(ur"\s", u" ", name).strip()
-    name = re.sub(r"\s", u" ", name).strip()
+    name = re.sub(r"\s", " ", name).strip()
     # remove leading dots
-    while len(name)>0 and name[0] == u".":
+    while len(name)>0 and name[0] == ".":
         name = name[1:]
     # remove trailing dots (Windows doesn't like them)
-    if name.endswith(u'.'):
+    if name.endswith("."):
         name = name[:-1]
     return name
 
 def fixKey(key):
     def fixByte(b):
         return b ^ ((b ^ (b<<1) ^ (b<<2) ^ (b<<3) ^ (b<<4) ^ (b<<5) ^ (b<<6) ^ (b<<7) ^ 0x80) & 0x80)
-    return     "".join([chr(fixByte(ord(a))) for a in key])
+    return bytes([fixByte(a) for a in key])
 
 def deXOR(text, sp, table):
     r=''
     j = sp
-    for i in xrange(len(text)):
+    for i in range(len(text)):
         r += chr(ord(table[j]) ^ ord(text[i]))
         j = j + 1
         if j == len(table):
@@ -269,19 +240,19 @@ class EreaderProcessor(object):
             raise ValueError('incorrect eReader version %d (error 1)' % version)
         data = self.section_reader(1)
         self.data = data
-        des = Des(fixKey(data[0:8]))
+        des = DES.new(fixKey(data[0:8]), DES.MODE_ECB)
         cookie_shuf, cookie_size = struct.unpack('>LL', des.decrypt(data[-8:]))
         if cookie_shuf < 3 or cookie_shuf > 0x14 or cookie_size < 0xf0 or cookie_size > 0x200:
             raise ValueError('incorrect eReader version (error 2)')
         input = des.decrypt(data[-cookie_size:])
         def unshuff(data, shuf):
-            r = [''] * len(data)
+            r = [0] * len(data)
             j = 0
-            for i in xrange(len(data)):
+            for i in range(len(data)):
                 j = (j + shuf) % len(data)
                 r[j] = data[i]
-            assert    len("".join(r)) == len(data)
-            return "".join(r)
+            assert len(bytes(r)) == len(data)
+            return bytes(r)
         r = unshuff(input[0:-8], cookie_shuf)
 
         drm_sub_version = struct.unpack('>H', r[0:2])[0]
@@ -333,7 +304,7 @@ class EreaderProcessor(object):
         if (self.flags & reqd_flags) != reqd_flags:
             print("Flags: 0x%X" % self.flags)
             raise ValueError('incompatible eReader file')
-        des = Des(fixKey(user_key))
+        des = DES.new(fixKey(user_key), DES.MODE_ECB)
         if version == 259:
             if drm_sub_version != 7:
                 raise ValueError('incorrect eReader version %d (error 3)' % drm_sub_version)
@@ -360,9 +331,9 @@ class EreaderProcessor(object):
 
     def getImage(self, i):
         sect = self.section_reader(self.first_image_page + i)
-        name = sect[4:4+32].strip('\0')
+        name = sect[4:4+32].strip(b'\0')
         data = sect[62:]
-        return sanitizeFileName(unicode(name,'windows-1252')), data
+        return sanitizeFileName(name.decode('windows-1252')), data
 
 
     # def getChapterNamePMLOffsetData(self):
@@ -409,9 +380,9 @@ class EreaderProcessor(object):
     #     return bkinfo
 
     def getText(self):
-        des = Des(fixKey(self.content_key))
-        r = ''
-        for i in xrange(self.num_text_pages):
+        des = DES.new(fixKey(self.content_key), DES.MODE_ECB)
+        r = b''
+        for i in range(self.num_text_pages):
             logging.debug('get page %d', i)
             r += zlib.decompress(des.decrypt(self.section_reader(1 + i)))
 
@@ -422,8 +393,8 @@ class EreaderProcessor(object):
             sect = self.section_reader(self.first_footnote_page)
             fnote_ids = deXOR(sect, 0, self.xortable)
             # the remaining records of the footnote sections need to be decoded with the content_key and zlib inflated
-            des = Des(fixKey(self.content_key))
-            for i in xrange(1,self.num_footnote_pages):
+            des = DES.new(fixKey(self.content_key), DES.MODE_ECB)
+            for i in range(1,self.num_footnote_pages):
                 logging.debug('get footnotepage %d', i)
                 id_len = ord(fnote_ids[2])
                 id = fnote_ids[3:3+id_len]
@@ -446,8 +417,8 @@ class EreaderProcessor(object):
             sect = self.section_reader(self.first_sidebar_page)
             sbar_ids = deXOR(sect, 0, self.xortable)
             # the remaining records of the sidebar sections need to be decoded with the content_key and zlib inflated
-            des = Des(fixKey(self.content_key))
-            for i in xrange(1,self.num_sidebar_pages):
+            des = DES.new(fixKey(self.content_key), DES.MODE_ECB)
+            for i in range(1,self.num_sidebar_pages):
                 id_len = ord(sbar_ids[2])
                 id = sbar_ids[3:3+id_len]
                 smarker = '<sidebar id="%s">\n' % id
@@ -461,9 +432,8 @@ class EreaderProcessor(object):
 def cleanPML(pml):
     # Convert special characters to proper PML code.  High ASCII start at (\x80, \a128) and go up to (\xff, \a255)
     pml2 = pml
-    for k in xrange(128,256):
-        badChar = chr(k)
-        pml2 = pml2.replace(badChar, '\\a%03d' % k)
+    for k in range(128,256):
+        pml2 = pml2.replace(bytes([k]), b'\\a%03d' % k)
     return pml2
 
 def decryptBook(infile, outpath, make_pmlz, user_key):
@@ -472,35 +442,35 @@ def decryptBook(infile, outpath, make_pmlz, user_key):
         # outpath is actually pmlz name
         pmlzname = outpath
         outdir = tempfile.mkdtemp()
-        imagedirpath = os.path.join(outdir,u"images")
+        imagedirpath = os.path.join(outdir,"images")
     else:
         pmlzname = None
         outdir = outpath
-        imagedirpath = os.path.join(outdir,bookname + u"_img")
+        imagedirpath = os.path.join(outdir,bookname + "_img")
 
     try:
         if not os.path.exists(outdir):
             os.makedirs(outdir)
-        print(u"Decoding File")
-        sect = Sectionizer(infile, 'PNRdPPrs')
+        print("Decoding File")
+        sect  =Sectionizer(infile, b'PNRdPPrs')
         er = EreaderProcessor(sect, user_key)
 
         if er.getNumImages() > 0:
-            print(u"Extracting images")
+            print("Extracting images")
             if not os.path.exists(imagedirpath):
                 os.makedirs(imagedirpath)
-            for i in xrange(er.getNumImages()):
+            for i in range(er.getNumImages()):
                 name, contents = er.getImage(i)
-                file(os.path.join(imagedirpath, name), 'wb').write(contents)
+                open(os.path.join(imagedirpath, name), 'wb').write(contents)
 
-        print(u"Extracting pml")
+        print("Extracting pml")
         pml_string = er.getText()
         pmlfilename = bookname + ".pml"
-        file(os.path.join(outdir, pmlfilename),'wb').write(cleanPML(pml_string))
+        open(os.path.join(outdir, pmlfilename),'wb').write(cleanPML(pml_string))
         if pmlzname is not None:
             import zipfile
             import shutil
-            print(u"Creating PMLZ file {0}".format(os.path.basename(pmlzname)))
+            print("Creating PMLZ file {0}".format(os.path.basename(pmlzname)))
             myZipFile = zipfile.ZipFile(pmlzname,'w',zipfile.ZIP_STORED, False)
             list = os.listdir(outdir)
             for filename in list:
@@ -519,42 +489,42 @@ def decryptBook(infile, outpath, make_pmlz, user_key):
             myZipFile.close()
             # remove temporary directory
             shutil.rmtree(outdir, True)
-            print(u"Output is {0}".format(pmlzname))
-        else :
-            print(u"Output is in {0}".format(outdir))
+            print("Output is {0}".format(pmlzname))
+        else:
+            print("Output is in {0}".format(outdir))
         print("done")
     except ValueError as e:
-        print(u"Error: {0}".format(e))
+        print("Error: {0}".format(e))
         traceback.print_exc()
         return 1
     return 0
 
 
 def usage():
-    print(u"Converts DRMed eReader books to PML Source")
-    print(u"Usage:")
-    print(u"  erdr2pml [options] infile.pdb [outpath] \"your name\" credit_card_number")
-    print(u" ")
-    print(u"Options: ")
-    print(u"  -h             prints this message")
-    print(u"  -p             create PMLZ instead of source folder")
-    print(u"  --make-pmlz    create PMLZ instead of source folder")
-    print(u" ")
-    print(u"Note:")
-    print(u"  if outpath is ommitted, creates source in 'infile_Source' folder")
-    print(u"  if outpath is ommitted and pmlz option, creates PMLZ 'infile.pmlz'")
-    print(u"  if source folder created, images are in infile_img folder")
-    print(u"  if pmlz file created, images are in images folder")
-    print(u"  It's enough to enter the last 8 digits of the credit card number")
+    print("Converts DRMed eReader books to PML Source")
+    print("Usage:")
+    print("  erdr2pml [options] infile.pdb [outpath] \"your name\" credit_card_number")
+    print(" ")
+    print("Options: ")
+    print("  -h             prints this message")
+    print("  -p             create PMLZ instead of source folder")
+    print("  --make-pmlz    create PMLZ instead of source folder")
+    print(" ")
+    print("Note:")
+    print("  if outpath is ommitted, creates source in 'infile_Source' folder")
+    print("  if outpath is ommitted and pmlz option, creates PMLZ 'infile.pmlz'")
+    print("  if source folder created, images are in infile_img folder")
+    print("  if pmlz file created, images are in images folder")
+    print("  It's enough to enter the last 8 digits of the credit card number")
     return
 
 def getuser_key(name,cc):
     newname = "".join(c for c in name.lower() if c >= 'a' and c <= 'z' or c >= '0' and c <= '9')
     cc = cc.replace(" ","")
-    return struct.pack('>LL', binascii.crc32(newname) & 0xffffffff,binascii.crc32(cc[-8:])& 0xffffffff)
+    return struct.pack('>LL', binascii.crc32(bytes(newname.encode('utf-8'))) & 0xffffffff, binascii.crc32(bytes(cc[-8:].encode('utf-8'))) & 0xffffffff)
 
 def cli_main():
-    print(u"eRdr2Pml v{0}. Copyright © 2009–2012 The Dark Reverser et al.".format(__version__))
+    print("eRdr2Pml v{0}. Copyright © 2009–2020 The Dark Reverser et al.".format(__version__))
 
     argv=unicode_argv()
     try:
@@ -580,13 +550,13 @@ def cli_main():
     if len(args)==3:
         infile, name, cc = args
         if make_pmlz:
-            outpath = os.path.splitext(infile)[0] + u".pmlz"
+            outpath = os.path.splitext(infile)[0] + ".pmlz"
         else:
-            outpath = os.path.splitext(infile)[0] + u"_Source"
+            outpath = os.path.splitext(infile)[0] + "_Source"
     elif len(args)==4:
         infile, outpath, name, cc = args
 
-    print(getuser_key(name,cc).encode('hex'))
+    print(binascii.b2a_hex(getuser_key(name,cc)))
 
     return decryptBook(infile, outpath, make_pmlz, getuser_key(name,cc))
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # crypto library mainly by some_updates
@@ -8,7 +8,6 @@
 # pbkdf2.py Copyright © 2009 Daniel Holth <dholth@fastmail.fm>
 # pbkdf2.py This code may be freely used and modified for any purpose.
 
-from __future__ import print_function
 import sys, os
 import hmac
 from struct import pack
@@ -159,7 +158,7 @@ def _load_libalfcrypto():
             topazCryptoDecrypt(ctx, data, out, len(data))
             return out.raw
 
-    print(u"Using Library AlfCrypto DLL/DYLIB/SO")
+    print("Using Library AlfCrypto DLL/DYLIB/SO")
     return (AES_CBC, Pukall_Cipher, Topaz_Cipher)
 
 
@@ -178,13 +177,13 @@ def _load_python_alfcrypto():
             if len(key)!=16:
                 raise Exception('Pukall_Cipher: Bad key length.')
             wkey = []
-            for i in xrange(8):
+            for i in range(8):
                 wkey.append(ord(key[i*2])<<8 | ord(key[i*2+1]))
             dst = ""
-            for i in xrange(len(src)):
+            for i in range(len(src)):
                 temp1 = 0;
                 byteXorVal = 0;
-                for j in xrange(8):
+                for j in range(8):
                     temp1 ^= wkey[j]
                     sum2  = (sum2+j)*20021 + sum1
                     sum1  = (temp1*346)&0xFFFF
@@ -197,7 +196,7 @@ def _load_python_alfcrypto():
                 curByte = ((curByte ^ (byteXorVal >> 8)) ^ byteXorVal) & 0xFF
                 if decryption:
                     keyXorVal = curByte * 257;
-                for j in xrange(8):
+                for j in range(8):
                     wkey[j] ^= keyXorVal;
                 dst+=chr(curByte)
             return dst
@@ -208,8 +207,9 @@ def _load_python_alfcrypto():
 
         def ctx_init(self, key):
             ctx1 = 0x0CAFFE19E
-            for keyChar in key:
-                keyByte = ord(keyChar)
+            if isinstance(key, str):
+                key = key.encode('latin-1')
+            for keyByte in key:
                 ctx2 = ctx1
                 ctx1 = ((((ctx1 >>2) * (ctx1 >>7))&0xFFFFFFFF) ^ (keyByte * keyByte * 0x0F902007)& 0xFFFFFFFF )
             self._ctx = [ctx1, ctx2]
@@ -221,8 +221,9 @@ def _load_python_alfcrypto():
             ctx1 = ctx[0]
             ctx2 = ctx[1]
             plainText = ""
-            for dataChar in data:
-                dataByte = ord(dataChar)
+            if isinstance(data, str):
+                data = data.encode('latin-1')
+            for dataByte in data:
                 m = (dataByte ^ ((ctx1 >> 3) &0xFF) ^ ((ctx2<<3) & 0xFF)) &0xFF
                 ctx2 = ctx1
                 ctx1 = (((ctx1 >> 2) * (ctx1 >> 7)) &0xFFFFFFFF) ^((m * m * 0x0F902007) &0xFFFFFFFF)
@@ -245,7 +246,7 @@ def _load_python_alfcrypto():
             cleartext = self.aes.decrypt(iv + data)
             return cleartext
 
-    print(u"Using Library AlfCrypto Python")
+    print("Using Library AlfCrypto Python")
     return (AES_CBC, Pukall_Cipher, Topaz_Cipher)
 
 
@@ -269,21 +270,10 @@ class KeyIVGen(object):
     #                             [c_char_p, c_ulong, c_char_p, c_ulong, c_ulong, c_ulong, c_char_p])
     def pbkdf2(self, passwd, salt, iter, keylen):
 
-        def xorstr( a, b ):
+        def xorbytes( a, b ):
             if len(a) != len(b):
-                raise Exception("xorstr(): lengths differ")
-            ret = b''
-            for x, y in zip(a, b):
-                if type(x) is str:
-                    ox = ord(x)
-                else:
-                    ox = x
-                if type(y) is str:
-                    oy = ord(y)
-                else:
-                    oy = y
-                ret += pack("B", ox ^ oy)
-            return ret
+                raise Exception("xorbytes(): lengths differ")
+            return bytes([x ^ y for x, y in zip(a, b)])
 
         def prf( h, data ):
             hm = h.copy()
@@ -291,11 +281,11 @@ class KeyIVGen(object):
             return hm.digest()
 
         def pbkdf2_F( h, salt, itercount, blocknum ):
-            U = prf( h, (salt + pack('>i',blocknum ).decode()).encode('utf-8') )
+            U = prf( h, salt + pack('>i',blocknum ) )
             T = U
             for i in range(2, itercount+1):
                 U = prf( h, U )
-                T = xorstr( T, U )
+                T = xorbytes( T, U )
             return T
 
         sha = hashlib.sha1
@@ -304,7 +294,7 @@ class KeyIVGen(object):
         l = keylen // digest_size
         if keylen % digest_size != 0:
             l += 1
-        h = hmac.new( bytearray(passwd, "ASCII"), None, sha )
+        h = hmac.new( passwd, None, sha )
         T = b""
         for i in range(1, l+1):
             T += pbkdf2_F( h, salt, iter, i )

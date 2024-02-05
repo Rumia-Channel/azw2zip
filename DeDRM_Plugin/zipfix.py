@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# zipfix.py, version 1.1
-# Copyright © 2010-2013 by some_updates, DiapDealer and Apprentice Alf
+# zipfix.py
+# Copyright © 2010-2020 by Apprentice Harper et al.
 
 # Released under the terms of the GNU General Public Licence, version 3
 # <http://www.gnu.org/licenses/>
@@ -10,20 +10,41 @@
 # Revision history:
 #   1.0 - Initial release
 #   1.1 - Updated to handle zip file metadata correctly
+#   2.0 - Python 3 for calibre 5.0
 
 """
 Re-write zip (or ePub) fixing problems with file names (and mimetype entry).
 """
-from __future__ import print_function
+
 
 __license__ = 'GPL v3'
 __version__ = "1.1"
 
-import sys
+import sys, os
+
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+# Explicitly set the package identifier so we are allowed to import stuff ...
+#__package__ = "DeDRM_plugin"
+
+#@@CALIBRE_COMPAT_CODE_END@@
+
 import zlib
 import zipfilerugged
-import os
-import os.path
 import getopt
 from struct import unpack
 
@@ -49,7 +70,7 @@ class fixZip:
         self.inzip = zipfilerugged.ZipFile(zinput,'r')
         self.outzip = zipfilerugged.ZipFile(zoutput,'w')
         # open the input zip for reading only as a raw file
-        self.bzf = file(zinput,'rb')
+        self.bzf = open(zinput,'rb')
 
     def getlocalname(self, zi):
         local_header_offset = zi.header_offset
@@ -62,21 +83,21 @@ class fixZip:
 
     def uncompress(self, cmpdata):
         dc = zlib.decompressobj(-15)
-        data = ''
+        data = b''
         while len(cmpdata) > 0:
             if len(cmpdata) > _MAX_SIZE :
                 newdata = cmpdata[0:_MAX_SIZE]
                 cmpdata = cmpdata[_MAX_SIZE:]
             else:
                 newdata = cmpdata
-                cmpdata = ''
+                cmpdata = b''
             newdata = dc.decompress(newdata)
             unprocessed = dc.unconsumed_tail
             if len(unprocessed) == 0:
                 newdata += dc.flush()
             data += newdata
             cmpdata += unprocessed
-            unprocessed = ''
+            unprocessed = b''
         return data
 
     def getfiledata(self, zi):
@@ -115,11 +136,11 @@ class fixZip:
         # if epub write mimetype file first, with no compression
         if self.ztype == 'epub':
             # first get a ZipInfo with current time and no compression
-            mimeinfo = ZipInfo('mimetype',compress_type=zipfilerugged.ZIP_STORED)
+            mimeinfo = ZipInfo(b'mimetype',compress_type=zipfilerugged.ZIP_STORED)
             mimeinfo.internal_attr = 1 # text file
             try:
                 # if the mimetype is present, get its info, including time-stamp
-                oldmimeinfo = self.inzip.getinfo('mimetype')
+                oldmimeinfo = self.inzip.getinfo(b'mimetype')
                 # copy across useful fields
                 mimeinfo.date_time = oldmimeinfo.date_time
                 mimeinfo.comment = oldmimeinfo.comment
@@ -129,11 +150,11 @@ class fixZip:
                 mimeinfo.create_system = oldmimeinfo.create_system
             except:
                 pass
-            self.outzip.writestr(mimeinfo, _MIMETYPE)
+            self.outzip.writestr(mimeinfo, _MIMETYPE.encode('ascii'))
 
         # write the rest of the files
         for zinfo in self.inzip.infolist():
-            if zinfo.filename != "mimetype" or self.ztype != 'epub':
+            if zinfo.filename != b"mimetype" or self.ztype != 'epub':
                 data = None
                 try:
                     data = self.inzip.read(zinfo.filename)
@@ -149,6 +170,7 @@ class fixZip:
                 nzinfo.internal_attr=zinfo.internal_attr
                 nzinfo.external_attr=zinfo.external_attr
                 nzinfo.create_system=zinfo.create_system
+                nzinfo.flag_bits = zinfo.flag_bits & 0x800  # preserve UTF-8 flag
                 self.outzip.writestr(nzinfo,data)
 
         self.bzf.close()
