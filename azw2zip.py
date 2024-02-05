@@ -29,7 +29,8 @@ from argv_utils import  set_utf8_default_encoding
 add_cp65001_codec()
 set_utf8_default_encoding()
 
-import DumpAZW6_v01
+#import DumpAZW6_v01
+import DumpAZW6_py3
 import kindleunpack
 import unipath
 
@@ -264,10 +265,10 @@ def main(argv=unicode_argv()):
             print(u"  HD画像展開: 開始: {}".format(res_fpath))
 
             if debug_mode:
-                DumpAZW6_v01.DumpAZW6(res_fpath, temp_dir)
+                DumpAZW6_py3.DumpAZW6(res_fpath, temp_dir)
             else:
                 with redirect_stdout(open(os.devnull, 'w')):
-                    DumpAZW6_v01.DumpAZW6(res_fpath, temp_dir)
+                    DumpAZW6_py3.DumpAZW6(res_fpath, temp_dir)
 
             print(u"  HD画像展開: 完了: {}".format(os.path.join(temp_dir, 'azw6_images')))
 
