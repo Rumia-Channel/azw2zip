@@ -4,12 +4,11 @@ KindleUnpackとDeDRM、DumpAZW6を改造してKindleの電子書籍(azw/azw3(あ
 zipにした場合は画像ファイルのみが格納されます。(小説等テキストベースの書籍の場合は表紙と挿絵のみ)  
 azwはWindowsならキーファイル(k4i)がなければ作り、変換します。(多分Macもだけど環境がないので未確認)  
 Linux(WSLも)では各自キーファイル(k4i)を別途用意してこれと同じディレクトリにおいてください。  
-Python 2.7かPython 3.8にpycryptoを入れたものが動く環境が必要です。  
-Kindleは1.24以前のものをインストールした環境でないとダメです。(DeDRMの仕様)  
+Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要です。
 
 ## Requirement
-* Python 2.7 or 3.8
-* pycrypto
+* Python 3.10
+* pycryptodome
 * lxml
 
 ## Usage
@@ -19,10 +18,9 @@ python azw2zip.py -z X:\My Kindle Content X:\Comic
 詳しくはreadme.txtを参照。
 
 ## Development environment
- * Kindle 1.24
- * Python 2.7.17 & Python 3.8.2
+ * Kindle 2.0
+ * Python 3.10.5
    * Windows 10
-   * Ubuntu 18.4 LTS(WSL)
 
 ## Note
 
@@ -47,11 +45,11 @@ python setup.py py2exe
 * https://github.com/junk2ool/azw2zip
 
 ## References
-* DeDRM_tools 6.7.0  
-https://github.com/apprenticeharper/DeDRM_tools  
+* DeDRM_tools 10.0.3  
+https://github.com/noDRM/DeDRM_tools
 のDeDRM_Plugin
 
-* DumpAZW6_v01.py  
+* DumpAZW6_py3.py  
 https://gist.github.com/fireattack/99b7d9f6b2896cfa33944555d9e2a158
 
 * KindleUnpack 0.82  
