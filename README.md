@@ -23,17 +23,12 @@ python azw2zip.py -z X:\My Kindle Content X:\Comic
 
 ## Note
 
-### py2exe
-p2exeをインストールする。  
- * azw2zip/\*.py  
- * azw2zip/DeDRM_Plugin/\*.py (\_\_init\_\_.py除く)  
- * azw2zip/KindleUnpack/lib/\*.py (\_\_init\_\_.py除く)  
+### exeファイルへまとめる方法
+rye と C++ コンパイル環境(例 Visual Studio, gcc, MinGW 等)をインストールする。
 
-上記の\*.pyを同じディレクトリに入れる。  
-```bash
-python setup.py py2exe  
-```
-を実行する。
+build.cmd を実行する。
+
+build/out ディレクトリにexeファイルが作成される。
 
 ## License
 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.ja.html)
@@ -44,7 +39,7 @@ python setup.py py2exe
 * https://github.com/junk2ool/azw2zip
 
 ## References
-* DeDRM_tools 10.0.3  
+* DeDRM_tools v10.0.9 (RC1 for 10.1.0)  
 https://github.com/noDRM/DeDRM_tools
 のDeDRM_Plugin
 
