@@ -1,0 +1,28 @@
+[project]
+name = "azw2zip"
+version = "0.3.0"
+description = "Add your description here"
+authors = [
+    { name = "Rumia_Chnnel", email = "github@rumia-ch.uk" }
+]
+dependencies = [
+    "lxml>=5.3.0",
+    "pycryptodome>=3.21.0",
+    "nuitka>=2.4.11",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/azw2zip"]
