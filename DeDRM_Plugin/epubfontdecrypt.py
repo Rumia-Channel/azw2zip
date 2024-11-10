@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # epubfontdecrypt.py
-# Copyright © 2021 by noDRM
+# Copyright © 2021-2023 by noDRM
 
 # Released under the terms of the GNU General Public Licence, version 3
 # <http://www.gnu.org/licenses/>
@@ -10,6 +10,7 @@
 
 # Revision history:
 #   1 - Initial release
+#   2 - Bugfix for multiple book IDs, reported at #347
 
 """
 Decrypts / deobfuscates font files in EPUB files
@@ -18,13 +19,14 @@ Decrypts / deobfuscates font files in EPUB files
 from __future__ import print_function
 
 __license__ = 'GPL v3'
-__version__ = "1"
+__version__ = "2"
 
 import os
 import traceback
 import zlib
 import zipfile
 from zipfile import ZipInfo, ZipFile, ZIP_STORED, ZIP_DEFLATED
+from zeroedzipinfo import ZeroedZipInfo
 from contextlib import closing
 from lxml import etree
 import itertools
@@ -192,9 +194,10 @@ def decryptFontsBook(inpath, outpath):
                 pass
 
             try: 
-                identify_element = container.find(packageNS("metadata")).find(metadataDCNS("identifier"))
-                if (secret_key_name is None or secret_key_name == identify_element.get("id")):
-                    font_master_key = identify_element.text
+                identify_elements = container.find(packageNS("metadata")).findall(metadataDCNS("identifier"))
+                for element in identify_elements:
+                    if (secret_key_name is None or secret_key_name == element.get("id")):
+                        font_master_key = element.text
             except: 
                 pass
 
@@ -298,12 +301,20 @@ def decryptFontsBook(inpath, outpath):
                         zi.internal_attr = oldzi.internal_attr
                         # external attributes are dependent on the create system, so copy both.
                         zi.external_attr = oldzi.external_attr
+                        zi.volume = oldzi.volume
                         zi.create_system = oldzi.create_system
+                        zi.create_version = oldzi.create_version
+
                         if any(ord(c) >= 128 for c in path) or any(ord(c) >= 128 for c in zi.comment):
                             # If the file name or the comment contains any non-ASCII char, set the UTF8-flag
                             zi.flag_bits |= 0x800
                     except:
                         pass
+
+                    # Python 3 has a bug where the external_attr is reset to `0o600 << 16`
+                    # if it's NULL, so we need a workaround:
+                    if zi.external_attr == 0: 
+                        zi = ZeroedZipInfo(zi)
 
                     if path == "mimetype":
                         outf.writestr(zi, inf.read('mimetype'))

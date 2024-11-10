@@ -17,11 +17,14 @@ python azw2zip.py -z X:\My Kindle Content X:\Comic
 詳しくはreadme.txtを参照。
 
 ## Development environment
- * Kindle 2.0
+ * Kindle 2.1.0 70471
  * Python 3.10.5
    * Windows 10
 
 ## Note
+
+### おまじない
+[ここ](https://www.mobileread.com/forums/showpost.php?p=3471461)から "disable k4pc download.bat" をダウンロードして実行することを勧める。
 
 ### exeファイルへまとめる方法
 rye と C++ コンパイル環境(例 Visual Studio, gcc, MinGW 等)をインストールする。

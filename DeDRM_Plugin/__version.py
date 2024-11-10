@@ -23,7 +23,7 @@ if "calibre" in sys.modules and sys.version_info[0] == 2:
 #@@CALIBRE_COMPAT_CODE_END@@
 
 PLUGIN_NAME = "DeDRM"
-__version__ = '10.0.3'
+__version__ = '10.0.9'
 
 PLUGIN_VERSION_TUPLE = tuple([int(x) for x in __version__.split(".")])
 PLUGIN_VERSION = ".".join([str(x)for x in PLUGIN_VERSION_TUPLE])

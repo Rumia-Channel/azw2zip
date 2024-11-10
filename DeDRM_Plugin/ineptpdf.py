@@ -51,13 +51,14 @@
 #   9.1.1 - Only support PyCryptodome; clean up the code
 #   10.0.0 - Add support for "hardened" Adobe DRM (RMSDK >= 10)
 #   10.0.2 - Fix some Python2 stuff
+#   10.0.4 - Fix more Python2 stuff
 
 """
 Decrypts Adobe ADEPT-encrypted PDF files.
 """
 
 __license__ = 'GPL v3'
-__version__ = "10.0.2"
+__version__ = "10.0.4"
 
 import codecs
 import hashlib
@@ -92,67 +93,12 @@ def unpad(data, padding=16):
     return data[:-pad_len]
 
 
-# Wrap a stream so that output gets flushed immediately
-# and also make sure that any unicode strings get
-# encoded using "replace" before writing them.
-class SafeUnbuffered:
-    def __init__(self, stream):
-        self.stream = stream
-        self.encoding = stream.encoding
-        if self.encoding == None:
-            self.encoding = "utf-8"
-    def write(self, data):
-        if isinstance(data,str) or isinstance(data,unicode):
-            # str for Python3, unicode for Python2
-            data = data.encode(self.encoding,"replace")
-        try:
-            buffer = getattr(self.stream, 'buffer', self.stream)
-            # self.stream.buffer for Python3, self.stream for Python2
-            buffer.write(data)
-            buffer.flush()
-        except:
-            # We can do nothing if a write fails
-            raise
-    def __getattr__(self, attr):
-        return getattr(self.stream, attr)
+from utilities import SafeUnbuffered
 
 iswindows = sys.platform.startswith('win')
 isosx = sys.platform.startswith('darwin')
 
-def unicode_argv():
-    if iswindows:
-        # Uses shell32.GetCommandLineArgvW to get sys.argv as a list of Unicode
-        # strings.
-
-        # Versions 2.x of Python don't support Unicode in sys.argv on
-        # Windows, with the underlying Windows API instead replacing multi-byte
-        # characters with '?'.
-
-
-        from ctypes import POINTER, byref, cdll, c_int, windll
-        from ctypes.wintypes import LPCWSTR, LPWSTR
-
-        GetCommandLineW = cdll.kernel32.GetCommandLineW
-        GetCommandLineW.argtypes = []
-        GetCommandLineW.restype = LPCWSTR
-
-        CommandLineToArgvW = windll.shell32.CommandLineToArgvW
-        CommandLineToArgvW.argtypes = [LPCWSTR, POINTER(c_int)]
-        CommandLineToArgvW.restype = POINTER(LPWSTR)
-
-        cmd = GetCommandLineW()
-        argc = c_int(0)
-        argv = CommandLineToArgvW(cmd, byref(argc))
-        if argc.value > 0:
-            # Remove Python executable and commands if present
-            start = argc.value - len(sys.argv)
-            return [argv[i] for i in
-                    range(start, argc.value)]
-        return ["ineptpdf.py"]
-    else:
-        argvencoding = sys.stdin.encoding or "utf-8"
-        return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
-
+from argv_utils import unicode_argv
 
 class ADEPTError(Exception):
     pass
@@ -171,7 +117,7 @@ def SHA256(message):
 # 1 = only if present in input
 # 2 = always
 
-GEN_XREF_STM = 0
+GEN_XREF_STM = 1
 
 # This is the value for the current document
 gen_xref_stm = False # will be set in PDFSerializer
@@ -200,7 +146,10 @@ def nunpack(s, default=0):
     elif l == 2:
         return struct.unpack('>H', s)[0]
     elif l == 3:
-        return struct.unpack('>L', bytes([0]) + s)[0]
+        if sys.version_info[0] == 2:
+            return struct.unpack('>L', '\x00'+s)[0]
+        else: 
+            return struct.unpack('>L', bytes([0]) + s)[0]
     elif l == 4:
         return struct.unpack('>L', s)[0]
     else:
@@ -320,6 +269,11 @@ END_KEYWORD = re.compile(br'[#/%\[\]()<>{}\s]')
 END_STRING = re.compile(br'[()\\]')
 OCT_STRING = re.compile(br'[0-7]')
 ESC_STRING = { b'b':8, b't':9, b'n':10, b'f':12, b'r':13, b'(':40, b')':41, b'\\':92 }
+
+class EmptyArrayValue(object):
+    def __str__(self):
+        return "<>"
+
 
 class PSBaseParser(object):
 
@@ -459,7 +413,10 @@ class PSBaseParser(object):
             self.hex += c
             return (self.parse_literal_hex, i+1)
         if self.hex:
-            self.token += bytes([int(self.hex, 16)])
+            if sys.version_info[0] == 2: 
+                self.token += chr(int(self.hex, 16))
+            else: 
+                self.token += bytes([int(self.hex, 16)])
         return (self.parse_literal, i)
 
     def parse_number(self, s, i):
@@ -543,10 +500,18 @@ class PSBaseParser(object):
             self.oct += c
             return (self.parse_string_1, i+1)
         if self.oct:
-            self.token += bytes([int(self.oct, 8)])
+            if sys.version_info[0] == 2:
+                self.token += chr(int(self.oct, 8))
+            else: 
+                self.token += bytes([int(self.oct, 8)])  
             return (self.parse_string, i)
         if c in ESC_STRING:
-            self.token += bytes([ESC_STRING[c]])
+
+            if sys.version_info[0] == 2:
+                self.token += chr(ESC_STRING[c])
+            else: 
+                self.token += bytes([ESC_STRING[c]])
+                
         return (self.parse_string, i+1)
 
     def parse_wopen(self, s, i):
@@ -559,6 +524,13 @@ class PSBaseParser(object):
         if c == b'<':
             self.add_token(KEYWORD_DICT_BEGIN)
             i += 1
+        if c == b'>':
+            # Empty array without any contents. Why though?
+            # We need to add some dummy python object that will serialize to 
+            # nothing, otherwise the code removes the whole array.
+            self.add_token(EmptyArrayValue())
+            i += 1
+
         return (self.parse_main, i)
 
     def parse_wclose(self, s, i):
@@ -572,13 +544,17 @@ class PSBaseParser(object):
         return (self.parse_main, i)
 
     def parse_hexstring(self, s, i):
-        m1 = END_HEX_STRING.search(s, i)
-        if not m1:
+        m = END_HEX_STRING.search(s, i)
+        if not m:
             self.token += s[i:]
             return (self.parse_hexstring, len(s))
-        j = m1.start(0)
+        j = m.start(0)
         self.token += s[i:j]
-        token = HEX_PAIR.sub(lambda m2: bytes([int(m2.group(0), 16)]),
+        if sys.version_info[0] == 2:
+            token = HEX_PAIR.sub(lambda m: chr(int(m.group(0), 16)),
+                                                 SPC.sub('', self.token))
+        else: 
+            token = HEX_PAIR.sub(lambda m: bytes([int(m.group(0), 16)]),
                                                  SPC.sub(b'', self.token))
         self.add_token(token)
         return (self.parse_main, j)
@@ -600,7 +576,11 @@ class PSBaseParser(object):
         while 1:
             self.fillbuf()
             if eol:
-                c = bytes([self.buf[self.charpos]])
+                if sys.version_info[0] == 2: 
+                    c = self.buf[self.charpos]
+                else: 
+                    c = bytes([self.buf[self.charpos]])
+
                 # handle '\r\n'
                 if c == b'\n':
                     linebuf += c
@@ -610,10 +590,17 @@ class PSBaseParser(object):
             if m:
                 linebuf += self.buf[self.charpos:m.end(0)]
                 self.charpos = m.end(0)
-                if bytes([linebuf[-1]]) == b'\r':
-                    eol = True
-                else:
-                    break
+                if sys.version_info[0] == 2:
+                    if linebuf[-1] == b'\r':
+                        eol = True
+                    else:
+                        break
+                else: 
+                    if bytes([linebuf[-1]]) == b'\r':
+                        eol = True
+                    else:
+                        break
+                    
             else:
                 linebuf += self.buf[self.charpos:]
                 self.charpos = len(self.buf)
@@ -989,9 +976,14 @@ class PDFStream(PDFObject):
                     for i in range(0, len(data), columns+1):
                         pred = data[i]
                         ent1 = data[i+1:i+1+columns]
-                        if pred == 2:
-                            ent1 = b''.join(bytes([(a+b) & 255]) \
-                                           for (a,b) in zip(ent0,ent1))
+                        if sys.version_info[0] == 2:
+                            if pred == '\x02':
+                                ent1 = ''.join(chr((ord(a)+ord(b)) & 255) \
+                                               for (a,b) in zip(ent0,ent1))
+                        else: 
+                            if pred == 2:
+                                ent1 = b''.join(bytes([(a+b) & 255]) \
+                                            for (a,b) in zip(ent0,ent1))
                         buf += ent1
                         ent0 = ent1
                     data = buf
@@ -1439,7 +1431,10 @@ class PDFDocument(object):
         x = ARC4.new(hash).decrypt(Odata) # 4
         if R >= 3:
             for i in range(1,19+1):
-                k = b''.join(bytes([c ^ i]) for c in hash )
+                if sys.version_info[0] == 2:
+                    k = b''.join(chr(ord(c) ^ i) for c in hash )
+                else: 
+                    k = b''.join(bytes([c ^ i]) for c in hash )
                 x = ARC4.new(k).decrypt(x)
 
 
@@ -1497,7 +1492,10 @@ class PDFDocument(object):
             hash.update(docid[0]) # 3
             x = ARC4.new(key).decrypt(hash.digest()[:16]) # 4
             for i in range(1,19+1):
-                k = b''.join(bytes([c ^ i]) for c in key )
+                if sys.version_info[0] == 2:
+                    k = b''.join(chr(ord(c) ^ i) for c in key )
+                else: 
+                    k = b''.join(bytes([c ^ i]) for c in key )
                 x = ARC4.new(k).decrypt(x)
             u1 = x+x # 32bytes total
         if R == 2:
@@ -1525,8 +1523,8 @@ class PDFDocument(object):
 
         # check owner pass:
         retval = self.check_owner_password(password, docid, param)
-        if retval is True or retval is not None:
-            #print("Owner pass is valid - " + str(retval))
+        if retval is True or (retval is not False and retval is not None):
+            #print("Owner pass is valid")
             if retval is True:
                 self.decrypt_key = self.recover_encryption_key_with_password(password, docid, param)
             else:
@@ -1535,7 +1533,7 @@ class PDFDocument(object):
         if self.decrypt_key is None or self.decrypt_key is True or self.decrypt_key is False:
             # That's not the owner password. Check if it's the user password.
             retval = self.check_user_password(password, docid, param)
-            if retval is True or retval is not None:
+            if retval is True or (retval is not False and retval is not None):
                 #print("User pass is valid")
                 if retval is True:
                     self.decrypt_key = self.recover_encryption_key_with_password(password, docid, param)
@@ -1604,7 +1602,13 @@ class PDFDocument(object):
 
     def initialize_ebx_ignoble(self, keyb64, docid, param):
         self.is_printable = self.is_modifiable = self.is_extractable = True
-        key = keyb64.decode('base64')[:16]
+
+        try: 
+            key = keyb64.decode('base64')[:16]
+            # This will probably always error, but I'm not 100% sure, so lets leave the old code in.
+        except AttributeError: 
+            key = codecs.decode(keyb64.encode("ascii"), 'base64')[:16]
+
 
         length = int_value(param.get('Length', 0)) / 8
         rights = codecs.decode(str_value(param.get('ADEPT_LICENSE')), "base64")
@@ -1632,13 +1636,15 @@ class PDFDocument(object):
             else:
                 print("ebx_V is %d  and ebx_type is %d" % (ebx_V, ebx_type))
                 print("length is %d and len(bookkey) is %d" % (length, len(bookkey)))
-                print("bookkey[0] is %d" % bookkey[0])
+                if len(bookkey) > 0:
+                    print("bookkey[0] is %d" % bookkey[0])
                 raise ADEPTError('error decrypting book session key - mismatched length')
         else:
             # proper length unknown try with whatever you have
             print("ebx_V is %d  and ebx_type is %d" % (ebx_V, ebx_type))
             print("length is %d and len(bookkey) is %d" % (length, len(bookkey)))
-            print("bookkey[0] is %d" % ord(bookkey[0]))
+            if len(bookkey) > 0:
+                print("bookkey[0] is %d" % ord(bookkey[0]))
             if ebx_V == 3:
                 V = 3
             else:
@@ -1669,7 +1675,7 @@ class PDFDocument(object):
 
     def initialize_ebx_inept(self, password, docid, param):
         self.is_printable = self.is_modifiable = self.is_extractable = True
-        rsakey = RSA.import_key(password) # parses the ASN1 structure
+        rsakey = RSA.importKey(password) # parses the ASN1 structure
         length = int_value(param.get('Length', 0)) // 8
         rights = codecs.decode(param.get('ADEPT_LICENSE'), 'base64')
         rights = zlib.decompress(rights, -15)
@@ -1704,13 +1710,15 @@ class PDFDocument(object):
             else:
                 print("ebx_V is %d  and ebx_type is %d" % (ebx_V, ebx_type))
                 print("length is %d and len(bookkey) is %d" % (length, len(bookkey)))
-                print("bookkey[0] is %d" % bookkey[0])
+                if len(bookkey) > 0:
+                    print("bookkey[0] is %d" % bookkey[0])
                 raise ADEPTError('error decrypting book session key - mismatched length')
         else:
             # proper length unknown try with whatever you have
             print("ebx_V is %d  and ebx_type is %d" % (ebx_V, ebx_type))
             print("length is %d and len(bookkey) is %d" % (length, len(bookkey)))
-            print("bookkey[0] is %d" % bookkey[0])
+            if len(bookkey) > 0:
+                print("bookkey[0] is %d" % bookkey[0])
             if ebx_V == 3:
                 V = 3
             else:
@@ -1758,7 +1766,11 @@ class PDFDocument(object):
         data = data[16:]
         plaintext = AES.new(key,AES.MODE_CBC,ivector).decrypt(data)
         # remove pkcs#5 aes padding
-        cutter = -1 * plaintext[-1]
+        if sys.version_info[0] == 2: 
+            cutter = -1 * ord(plaintext[-1])
+        else: 
+            cutter = -1 * plaintext[-1]
+
         plaintext = plaintext[:cutter]
         return plaintext
 
@@ -1819,7 +1831,19 @@ class PDFDocument(object):
                 try:
                     obj = objs[i]
                 except IndexError:
-                    raise PDFSyntaxError('Invalid object number: objid=%r' % (objid))
+                    # This IndexError used to just raise an exception.
+                    # Unfortunately that seems to break some PDFs, see this issue:
+                    # https://github.com/noDRM/DeDRM_tools/issues/233
+                    # I'm not sure why this is the case, but lets try only raising that exception
+                    # when in STRICT mode, and make it a warning otherwise.
+                    if STRICT:
+                        raise PDFSyntaxError('Invalid object number: objid=%r' % (objid))
+
+                    print('Invalid object number: objid=%r' % (objid))
+                    print("Continuing anyways?")
+                    print("If the resulting PDF is corrupted, please open a bug report.")
+                    return None
+
                 if isinstance(obj, PDFStream):
                     obj.set_objid(objid, 0)
             else:
@@ -2234,7 +2258,7 @@ class PDFSerializer(object):
         elif isinstance(obj, bytearray):
             self.write(b'(%s)' % self.escape_string(obj))
         elif isinstance(obj, bytes):
-            self.write(b'(%s)' % self.escape_string(obj))
+            self.write(b'<%s>' % binascii.hexlify(obj).upper())
         elif isinstance(obj, str):
             self.write(b'(%s)' % self.escape_string(obj.encode('utf-8')))
         elif isinstance(obj, bool):
@@ -2261,6 +2285,20 @@ class PDFSerializer(object):
                 self.write(b'(deleted)')
             else:
                 data = obj.get_decdata()
+
+                # Fix length:
+                # We've decompressed and then recompressed the PDF stream.
+                # Depending on the algorithm, the implementation, and the compression level, 
+                # the resulting recompressed stream is unlikely to have the same length as the original.
+                # So we need to update the PDF object to contain the new proper length.
+
+                # Without this change, all PDFs exported by this plugin are slightly corrupted - 
+                # even though most if not all PDF readers can correct that on-the-fly.
+
+                if 'Length' in obj.dic: 
+                    obj.dic['Length'] = len(data)
+
+
                 self.serialize_object(obj.dic)
                 self.write(b'stream\n')
                 self.write(data)
@@ -2307,7 +2345,7 @@ def getPDFencryptionType(inpath):
 def cli_main():
     sys.stdout=SafeUnbuffered(sys.stdout)
     sys.stderr=SafeUnbuffered(sys.stderr)
-    argv=unicode_argv()
+    argv=unicode_argv("ineptpdf.py")
     progname = os.path.basename(argv[0])
     if len(argv) != 4:
         print("usage: {0} <keyfile.der> <inbook.pdf> <outbook.pdf>".format(progname))

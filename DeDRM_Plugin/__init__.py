@@ -5,7 +5,7 @@ from __future__ import print_function
 
 # __init__.py for DeDRM_plugin
 # Copyright © 2008-2020 Apprentice Harper et al.
-# Copyright © 2021 NoDRM
+# Copyright © 2021-2023 NoDRM
 
 __license__   = 'GPL v3'
 __docformat__ = 'restructuredtext en'
@@ -82,6 +82,7 @@ __docformat__ = 'restructuredtext en'
 #  10.0.0 - First forked version by NoDRM. See CHANGELOG.md for details.
 #  10.0.1 - Fixes a bug in the watermark code.
 #  10.0.2 - Fix Kindle for Mac & update Adobe key retrieval
+#  For changes made in 10.0.3 and above, see the CHANGELOG.md file
 
 """
 Decrypt DRMed ebooks.
@@ -153,29 +154,8 @@ except:
     config_dir = ""
 
 
-# Wrap a stream so that output gets flushed immediately
-# and also make sure that any unicode strings get safely
-# encoded using "replace" before writing them.
-class SafeUnbuffered:
-    def __init__(self, stream):
-        self.stream = stream
-        self.encoding = stream.encoding
-        if self.encoding == None:
-            self.encoding = "utf-8"
-    def write(self, data):
-        if isinstance(data,str) or isinstance(data,unicode):
-            # str for Python3, unicode for Python2
-            data = data.encode(self.encoding,"replace")
-        try:
-            buffer = getattr(self.stream, 'buffer', self.stream)
-            # self.stream.buffer for Python3, self.stream for Python2
-            buffer.write(data)
-            buffer.flush()
-        except:
-            # We can do nothing if a write fails
-            raise
-    def __getattr__(self, attr):
-        return getattr(self.stream, attr)
+import utilities
+
 
 PLUGIN_NAME = __version.PLUGIN_NAME
 PLUGIN_VERSION = __version.PLUGIN_VERSION
@@ -201,12 +181,8 @@ class DeDRM(FileTypePlugin):
     
     def initialize(self):
         """
-        Dynamic modules can't be imported/loaded from a zipfile.
-        So this routine will extract the appropriate
-        library for the target OS and copy it to the 'alfcrypto' subdirectory of
-        calibre's configuration directory. That 'alfcrypto' directory is then
-        inserted into the syspath (as the very first entry) in the run function
-        so the CDLL stuff will work in the alfcrypto.py script.
+        Extracting a couple Python scripts if running on Linux, 
+        just in case we need to run them in Wine.
 
         The extraction only happens once per version of the plugin
         Also perform upgrade of preferences once per version
@@ -227,15 +203,12 @@ class DeDRM(FileTypePlugin):
                 os.mkdir(self.alfdir)
             # only continue if we've never run this version of the plugin before
             self.verdir = os.path.join(self.maindir,PLUGIN_VERSION)
-            if not os.path.exists(self.verdir):
-                if iswindows:
-                    names = ["alfcrypto.dll","alfcrypto64.dll"]
-                elif isosx:
-                    names = ["libalfcrypto.dylib"]
-                else:
-                    names = ["libalfcrypto32.so","libalfcrypto64.so","kindlekey.py","adobekey.py","subasyncio.py"]
+            if not os.path.exists(self.verdir) and not iswindows and not isosx:
+
+                names = ["kindlekey.py","adobekey.py","ignoblekeyNookStudy.py","utilities.py","argv_utils.py"]
+
                 lib_dict = self.load_resources(names)
-                print("{0} v{1}: Copying needed library files from plugin's zip".format(PLUGIN_NAME, PLUGIN_VERSION))
+                print("{0} v{1}: Copying needed Python scripts from plugin's zip".format(PLUGIN_NAME, PLUGIN_VERSION))
 
                 for entry, data in lib_dict.items():
                     file_path = os.path.join(self.alfdir, entry)
@@ -247,7 +220,7 @@ class DeDRM(FileTypePlugin):
                     try:
                         open(file_path,'wb').write(data)
                     except:
-                        print("{0} v{1}: Exception when copying needed library files".format(PLUGIN_NAME, PLUGIN_VERSION))
+                        print("{0} v{1}: Exception when copying needed python scripts".format(PLUGIN_NAME, PLUGIN_VERSION))
                         traceback.print_exc()
                         pass
 
@@ -530,10 +503,10 @@ class DeDRM(FileTypePlugin):
                             continue
 
                         # Found matching key
-                        userkey = codecs.decode(userkeyhex, 'hex')
                         print("{0} v{1}: Trying UUID-matched encryption key {2:s}".format(PLUGIN_NAME, PLUGIN_VERSION, keyname))
                         of = self.temporary_file(".epub")
                         try: 
+                            userkey = codecs.decode(userkeyhex, 'hex')
                             result = ineptepub.decryptBook(userkey, inf.name, of.name)
                             of.close()
                             if result == 0:
@@ -550,12 +523,13 @@ class DeDRM(FileTypePlugin):
 
                 # Attempt to decrypt epub with each encryption key (generated or provided).
                 for keyname, userkeyhex in dedrmprefs['adeptkeys'].items():
-                    userkey = codecs.decode(userkeyhex, 'hex')
+                    
                     print("{0} v{1}: Trying Encryption key {2:s}".format(PLUGIN_NAME, PLUGIN_VERSION, keyname))
                     of = self.temporary_file(".epub")
 
                     # Give the user key, ebook and TemporaryPersistent file to the decryption function.
                     try:
+                        userkey = codecs.decode(userkeyhex, 'hex')
                         result = ineptepub.decryptBook(userkey, inf.name, of.name)
                     except ineptepub.ADEPTNewVersionError:
                         print("{0} v{1}: Book uses unsupported (too new) Adobe DRM.".format(PLUGIN_NAME, PLUGIN_VERSION, time.time()-self.starttime))
@@ -692,11 +666,11 @@ class DeDRM(FileTypePlugin):
                     continue
             
                 # Found matching key
-                userkey = codecs.decode(userkeyhex, 'hex')
                 print("{0} v{1}: Trying UUID-matched encryption key {2:s}".format(PLUGIN_NAME, PLUGIN_VERSION, keyname))
                 of = self.temporary_file(".pdf")
 
                 try: 
+                    userkey = codecs.decode(userkeyhex, 'hex')
                     result = ineptpdf.decryptBook(userkey, path_to_ebook, of.name)
                     of.close()
                     if result == 0:
@@ -779,10 +753,10 @@ class DeDRM(FileTypePlugin):
             if newkey is not None: 
                 if codecs.encode(newkey, 'hex').decode('ascii') not in dedrmprefs['adeptkeys'].values():
                     print("{0} v{1}: Found new key '{2}' in DeACSM plugin".format(PLUGIN_NAME, PLUGIN_VERSION, newname))
-                    newkeys.append(keyvalue)
+                    newkeys.append(newkey)
                     newnames.append(newname)
         except:
-            pass
+            traceback.print_exc()
 
         if len(newkeys) > 0:
             try:
@@ -816,7 +790,7 @@ class DeDRM(FileTypePlugin):
 
                     print("{0} v{1}: Failed to decrypt with new default key after {2:.1f} seconds".format(PLUGIN_NAME, PLUGIN_VERSION,time.time()-self.starttime))
             except Exception as e:
-                pass
+                traceback.print_exc()
 
 
         # Unable to decrypt the PDF with any of the existing keys. Is it a B&N PDF?
@@ -1044,8 +1018,8 @@ class DeDRM(FileTypePlugin):
     def run(self, path_to_ebook):
 
         # make sure any unicode output gets converted safely with 'replace'
-        sys.stdout=SafeUnbuffered(sys.stdout)
-        sys.stderr=SafeUnbuffered(sys.stderr)
+        sys.stdout=utilities.SafeUnbuffered(sys.stdout)
+        sys.stderr=utilities.SafeUnbuffered(sys.stderr)
 
         print("{0} v{1}: Trying to decrypt {2}".format(PLUGIN_NAME, PLUGIN_VERSION, os.path.basename(path_to_ebook)))
         self.starttime = time.time()

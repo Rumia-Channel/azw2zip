@@ -7,8 +7,14 @@ import codecs
 import importlib
 
 # get sys.argv arguments and encode them into utf-8
-def unicode_argv():
-    if sys.platform.startswith('win'):
+def unicode_argv(default_name):
+
+    try:
+        from calibre.constants import iswindows
+    except:
+        iswindows = sys.platform.startswith('win')
+
+    if iswindows:
         # Uses shell32.GetCommandLineArgvW to get sys.argv as a list of Unicode
         # strings.
 
@@ -38,11 +44,10 @@ def unicode_argv():
                     range(start, argc.value)]
         # if we don't have any arguments at all, just pass back script name
         # this should never happen
-        return ["DeDRM.py"]
+        return [ default_name ]
     else:
         argvencoding = sys.stdin.encoding or "utf-8"
         return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
-
 
 def add_cp65001_codec():
   try:
@@ -83,5 +88,3 @@ def set_utf8_default_encoding():
   except locale.Error:
     pass
   return
-
-

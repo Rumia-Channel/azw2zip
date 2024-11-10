@@ -80,73 +80,11 @@ import sys
 import os
 import struct
 import binascii
-try:
-    from alfcrypto import Pukall_Cipher
-except:
-    print("AlfCrypto not found. Using python PC1 implementation.")
+from alfcrypto import Pukall_Cipher
 
-# Wrap a stream so that output gets flushed immediately
-# and also make sure that any unicode strings get
-# encoded using "replace" before writing them.
-class SafeUnbuffered:
-    def __init__(self, stream):
-        self.stream = stream
-        self.encoding = stream.encoding
-        if self.encoding == None:
-            self.encoding = "utf-8"
-    def write(self, data):
-        if isinstance(data,str) or isinstance(data,unicode):
-            # str for Python3, unicode for Python2
-            data = data.encode(self.encoding,"replace")
-        try:
-            buffer = getattr(self.stream, 'buffer', self.stream)
-            # self.stream.buffer for Python3, self.stream for Python2
-            buffer.write(data)
-            buffer.flush()
-        except:
-            # We can do nothing if a write fails
-            raise
-    def __getattr__(self, attr):
-        return getattr(self.stream, attr)
+from utilities import SafeUnbuffered
 
-iswindows = sys.platform.startswith('win')
-isosx = sys.platform.startswith('darwin')
-
-def unicode_argv():
-    if iswindows:
-        # Uses shell32.GetCommandLineArgvW to get sys.argv as a list of Unicode
-        # strings.
-
-        # Versions 2.x of Python don't support Unicode in sys.argv on
-        # Windows, with the underlying Windows API instead replacing multi-byte
-        # characters with '?'.
-
-
-        from ctypes import POINTER, byref, cdll, c_int, windll
-        from ctypes.wintypes import LPCWSTR, LPWSTR
-
-        GetCommandLineW = cdll.kernel32.GetCommandLineW
-        GetCommandLineW.argtypes = []
-        GetCommandLineW.restype = LPCWSTR
-
-        CommandLineToArgvW = windll.shell32.CommandLineToArgvW
-        CommandLineToArgvW.argtypes = [LPCWSTR, POINTER(c_int)]
-        CommandLineToArgvW.restype = POINTER(LPWSTR)
-
-        cmd = GetCommandLineW()
-        argc = c_int(0)
-        argv = CommandLineToArgvW(cmd, byref(argc))
-        if argc.value > 0:
-            # Remove Python executable and commands if present
-            start = argc.value - len(sys.argv)
-            return [argv[i] for i in
-                    range(start, argc.value)]
-        # if we don't have any arguments at all, just pass back script name
-        # this should never happen
-        return ["mobidedrm.py"]
-    else:
-        argvencoding = sys.stdin.encoding or "utf-8"
-        return [arg if (isinstance(arg, str) or isinstance(arg,unicode)) else str(arg, argvencoding) for arg in sys.argv]
+from argv_utils import unicode_argv
 
 
 class DrmException(Exception):
@@ -162,41 +100,8 @@ def PC1(key, src, decryption=True):
     # if we can get it from alfcrypto, use that
     try:
         return Pukall_Cipher().PC1(key,src,decryption)
-    except NameError:
-        pass
-    except TypeError:
-        pass
-
-    # use slow python version, since Pukall_Cipher didn't load
-    sum1 = 0;
-    sum2 = 0;
-    keyXorVal = 0;
-    if len(key)!=16:
-         DrmException ("PC1: Bad key length")
-    wkey = []
-    for i in range(8):
-        wkey.append(key[i*2]<<8 | key[i*2+1])
-    dst = bytearray(len(src))
-    for i in range(len(src)):
-        temp1 = 0;
-        byteXorVal = 0;
-        for j in range(8):
-            temp1 ^= wkey[j]
-            sum2  = (sum2+j)*20021 + sum1
-            sum1  = (temp1*346)&0xFFFF
-            sum2  = (sum2+sum1)&0xFFFF
-            temp1 = (temp1*20021+1)&0xFFFF
-            byteXorVal ^= temp1 ^ sum2
-        curByte = src[i]
-        if not decryption:
-            keyXorVal = curByte * 257;
-        curByte = ((curByte ^ (byteXorVal >> 8)) ^ byteXorVal) & 0xFF
-        if decryption:
-            keyXorVal = curByte * 257;
-        for j in range(8):
-            wkey[j] ^= keyXorVal;
-        dst[i] = curByte
-    return bytes(dst)
+    except: 
+        raise
 
 # accepts unicode returns unicode
 def checksumPid(s):
@@ -254,12 +159,7 @@ class MobiBook:
         pass
 
     def __init__(self, infile):
-        print("MobiDeDrm v{0:s}.\nCopyright © 2008-2020 The Dark Reverser, Apprentice Harper et al.".format(__version__))
-
-        try:
-            from alfcrypto import Pukall_Cipher
-        except:
-            print("AlfCrypto not found. Using python PC1 implementation.")
+        print("MobiDeDrm v{0:s}.\nCopyright © 2008-2022 The Dark Reverser, Apprentice Harper et al.".format(__version__))
 
         # initial sanity check on file
         self.data_file = open(infile, 'rb').read()
@@ -544,7 +444,7 @@ def getUnencryptedBook(infile,pidlist):
 
 
 def cli_main():
-    argv=unicode_argv()
+    argv=unicode_argv("mobidedrm.py")
     progname = os.path.basename(argv[0])
     if len(argv)<3 or len(argv)>4:
         print("MobiDeDrm v{0:s}.\nCopyright © 2008-2020 The Dark Reverser, Apprentice Harper et al.".format(__version__))
