@@ -274,7 +274,7 @@ def usage(progname):
 def cli_main():
     argv=unicode_argv("k4mobidedrm.py")
     progname = os.path.basename(argv[0])
-    print("K4MobiDeDrm v{0}.\nCopyright © 2008-2020 Apprentice Harper et al.".format(__version__))
+    print("K4MobiDeDrm v{0}.\nCopyright (C) 2008-2020 Apprentice Harper et al.".format(__version__))
 
     try:
         opts, args = getopt.getopt(argv[1:], "k:p:s:a:h")
