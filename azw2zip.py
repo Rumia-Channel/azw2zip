@@ -262,12 +262,8 @@ def main(argv=unicode_argv()):
         cfg.setOutputFormats(output_zip, output_epub, output_images, output_pdf)
 
         # 作業ディレクトリ作成
-        # ランダムな8文字のディレクトリ名
-        source = string.ascii_letters + string.digits
-        random_str = ''.join([random.choice(source) for _ in range(8)])
-        temp_dir = os.path.join(out_dir, "Temp_" + random_str)
         book_fname = os.path.basename(os.path.dirname(azw_fpath))
-        #temp_dir = os.path.join(out_dir, book_fname)
+        temp_dir = os.path.join(out_dir, book_fname)
         print(u" 作業ディレクトリ: 作成: {}".format(temp_dir))
         if not unipath.exists(temp_dir):
             unipath.mkdir(temp_dir)
@@ -328,8 +324,46 @@ def main(argv=unicode_argv()):
 
                 for format in output_format:
                     if format[0]:
-                        output_fpath = os.path.join(out_dir, fname_txt + format[2])
-                        output_files = glob.glob(output_fpath.replace('[', '[[]'))
+                        # まず一時ディレクトリ内でファイルを検索（再帰的）
+                        temp_output_fpath = os.path.join(temp_dir, "**", "*" + format[2])
+                        temp_files = glob.glob(temp_output_fpath, recursive=True)
+                        if debug_mode:
+                            print(u"  デバッグ: 検索パス: {}".format(temp_output_fpath))
+                            print(u"  デバッグ: 見つかったファイル: {}".format(temp_files))
+                            # 一時ディレクトリ内の全ファイルを表示
+                            print(u"  デバッグ: 一時ディレクトリ内容:")
+                            for root, dirs, files in os.walk(temp_dir):
+                                for file in files:
+                                    if file.endswith('.epub'):
+                                        full_path = os.path.join(root, file)
+                                        print(u"    EPUB発見: {}".format(full_path))
+                        if temp_files:
+                            # ファイルが見つかったら出力ディレクトリに移動
+                            final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                            if debug_mode:
+                                print(u"  デバッグ: {} -> {}".format(temp_files[0], final_output_fpath))
+                            shutil.move(temp_files[0], final_output_fpath)
+                            output_files = [final_output_fpath]
+                        else:
+                            # glob検索で見つからない場合、実際のEPUBファイルを直接移動
+                            if debug_mode:
+                                print(u"  デバッグ: glob検索失敗、直接EPUBファイルを探索")
+                            for root, dirs, files in os.walk(temp_dir):
+                                for file in files:
+                                    if file.endswith('.epub'):
+                                        source_path = os.path.join(root, file)
+                                        final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                        if debug_mode:
+                                            print(u"  デバッグ: 直接移動: {} -> {}".format(source_path, final_output_fpath))
+                                        shutil.move(source_path, final_output_fpath)
+                                        output_files = [final_output_fpath]
+                                        break
+                                if output_files:
+                                    break
+                            if not output_files:
+                                # 出力ディレクトリ内も確認（既存の処理）
+                                output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                output_files = glob.glob(output_fpath.replace('[', '[[]'))
                         if (len(output_files)):
                             try:
                                 print(u"  {}変換: 完了: {}".format(format[1], output_files[0]))
