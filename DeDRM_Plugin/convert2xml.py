@@ -5,6 +5,9 @@
 # For use with Topaz Scripts Version 2.6
 # Python 3, September 2020
 
+
+#@@CALIBRE_COMPAT_CODE@@
+
 from utilities import SafeUnbuffered
 
 import sys

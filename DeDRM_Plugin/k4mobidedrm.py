@@ -76,26 +76,7 @@ except:
 
 import json
 
-
-#@@CALIBRE_COMPAT_CODE_START@@
-import sys, os
-
-# Explicitly allow importing everything ...
-if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Bugfix for Calibre < 5:
-if "calibre" in sys.modules and sys.version_info[0] == 2:
-    from calibre.utils.config import config_dir
-    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
-        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
-
-# Explicitly set the package identifier so we are allowed to import stuff ...
-#__package__ = "DeDRM_plugin"
-
-#@@CALIBRE_COMPAT_CODE_END@@
+#@@CALIBRE_COMPAT_CODE@@
 
 
 class DrmException(Exception):
@@ -159,7 +140,7 @@ def unescape(text):
         return text # leave as is
     return re.sub("&#?\\w+;", fixup, text)
 
-def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime = time.time()):
+def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime = time.time(),skeyfile=None):
     # handle the obvious cases at the beginning
     if not os.path.isfile(infile):
         raise DrmException("Input file does not exist.")
@@ -174,7 +155,7 @@ def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime 
         mobi = False
 
     if magic8[:4] == b'PK\x03\x04':
-        mb = kfxdedrm.KFXZipBook(infile)
+        mb = kfxdedrm.KFXZipBook(infile,skeyfile)
     elif mobi:
         mb = mobidedrm.MobiBook(infile)
     else:
@@ -274,7 +255,7 @@ def usage(progname):
 def cli_main():
     argv=unicode_argv("k4mobidedrm.py")
     progname = os.path.basename(argv[0])
-    print("K4MobiDeDrm v{0}.\nCopyright (C) 2008-2020 Apprentice Harper et al.".format(__version__))
+    print("K4MobiDeDrm v{0}.\nCopyright © 2008-2020 Apprentice Harper et al.".format(__version__))
 
     try:
         opts, args = getopt.getopt(argv[1:], "k:p:s:a:h")

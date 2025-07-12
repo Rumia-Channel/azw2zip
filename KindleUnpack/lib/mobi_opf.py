@@ -307,7 +307,7 @@ class OPFProcessor(object):
         if self.target_epubver == '3':
             # Append metadata for EPUB3.
             if self.exth_fixedlayout_metadata:
-                data.append('<!-- EPUB3 MedaData converted from EXTH -->\n')
+                data.append('<!-- EPUB3 MetaData converted from EXTH -->\n')
                 data += self.exth_fixedlayout_metadata
 
         # all that remains is extra EXTH info we will store inside a comment inside meta name/content pairs
@@ -315,7 +315,12 @@ class OPFProcessor(object):
         data.append(BEGIN_INFO_ONLY + '\n')
         if 'ThumbOffset' in metadata:
             imageNumber = int(metadata['ThumbOffset'][0])
-            imageName = self.rscnames[imageNumber]
+            # Some bad books give image indexes that are 'out of range'
+            try:
+                imageName = self.rscnames[imageNumber]
+            except:
+                print('Number given for Cover Thumbnail is out of range: %s' % imageNumber)
+                imageName = None
             if imageName is None:
                 print("Error: Cover Thumbnail image %s was not recognized as a valid image" % imageNumber)
             else:
@@ -672,10 +677,9 @@ class OPFProcessor(object):
         # meta viewport property tag stored in the <head></head> of **each**
         # xhtml page - so this tag would need to be handled by editing each part
         # before reaching this routine
-        # we need to add support for this to the k8html routine
-        # if 'original-resolution' in metadata.keys():
-        #     resolution = metadata['original-resolution'][0].lower()
-        #     width, height = resolution.split('x')
-        #     if width.isdigit() and int(width) > 0 and height.isdigit() and int(height) > 0:
-        #         viewport = 'width=%s, height=%s' % (width, height)
-        #         self.createMetaTag(self.exth_fixedlayout_metadata, 'rendition:viewport', viewport)
+        if 'original-resolution' in metadata.keys():
+            resolution = metadata['original-resolution'][0].lower()
+            width, height = resolution.split('x')
+            if width.isdigit() and int(width) > 0 and height.isdigit() and int(height) > 0:
+                viewport = 'width=%s, height=%s' % (width, height)
+                self.createMetaTag(self.exth_fixedlayout_metadata, 'rendition:viewport', viewport)

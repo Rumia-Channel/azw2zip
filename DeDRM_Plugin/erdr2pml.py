@@ -77,33 +77,15 @@ try:
 except ImportError:
     from Crypto.Cipher import DES
 
-
-#@@CALIBRE_COMPAT_CODE_START@@
-import sys, os
-
-# Explicitly allow importing everything ...
-if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Bugfix for Calibre < 5:
-if "calibre" in sys.modules and sys.version_info[0] == 2:
-    from calibre.utils.config import config_dir
-    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
-        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
-
-# Explicitly set the package identifier so we are allowed to import stuff ...
-#__package__ = "DeDRM_plugin"
-
-#@@CALIBRE_COMPAT_CODE_END@@
+#@@CALIBRE_COMPAT_CODE@@
 
 from utilities import SafeUnbuffered
+from argv_utils import unicode_argv
 
 iswindows = sys.platform.startswith('win')
 isosx = sys.platform.startswith('darwin')
 
-from argv_utils import unicode_argv
+
 
 import cgi
 import logging
@@ -160,14 +142,20 @@ def sanitizeFileName(name):
 
 def fixKey(key):
     def fixByte(b):
+        if sys.version_info[0] == 2:
+            b = ord(b)
+
         return b ^ ((b ^ (b<<1) ^ (b<<2) ^ (b<<3) ^ (b<<4) ^ (b<<5) ^ (b<<6) ^ (b<<7) ^ 0x80) & 0x80)
-    return bytes([fixByte(a) for a in key])
+    return bytes(bytearray([fixByte(a) for a in key]))
 
 def deXOR(text, sp, table):
-    r=''
+    r=b''
     j = sp
     for i in range(len(text)):
-        r += chr(ord(table[j]) ^ ord(text[i]))
+        if sys.version_info[0] == 2:
+            r += chr(ord(table[j]) ^ ord(text[i]))
+        else: 
+            r += bytes(bytearray([table[j] ^ text[i]]))
         j = j + 1
         if j == len(table):
             j = 0
@@ -267,7 +255,7 @@ class EreaderProcessor(object):
             encrypted_key = r[172:172+8]
             encrypted_key_sha = r[56:56+20]
         self.content_key = des.decrypt(encrypted_key)
-        if sha1(self.content_key).digest() != encrypted_key_sha:
+        if hashlib.sha1(self.content_key).digest() != encrypted_key_sha:
             raise ValueError('Incorrect Name and/or Credit Card')
 
     def getNumImages(self):

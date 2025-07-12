@@ -62,7 +62,11 @@ except NameError:
 
 # Routines common to Mac and PC
 
+#@@CALIBRE_COMPAT_CODE@@
+
 from utilities import SafeUnbuffered
+from argv_utils import unicode_argv
+    
 
 try:
     from calibre.constants import iswindows, isosx
@@ -70,7 +74,7 @@ except:
     iswindows = sys.platform.startswith('win')
     isosx = sys.platform.startswith('darwin')
 
-from argv_utils import unicode_argv
+
 
 class DrmException(Exception):
     pass
@@ -115,11 +119,17 @@ def primes(n):
 def encode(data, map):
     result = b''
     for char in data:
-        value = char
+        if sys.version_info[0] == 2:
+            value = ord(char)
+        else:
+            value = char
+
         Q = (value ^ 0x80) // len(map)
         R = value % len(map)
-        result += bytes([map[Q]])
-        result += bytes([map[R]])
+
+        result += bytes(bytearray([map[Q]]))
+        result += bytes(bytearray([map[R]]))
+
     return result
 
 # Hash the bytes in data and then encode the digest with the characters in map
@@ -232,9 +242,14 @@ if iswindows:
 
             # replace any non-ASCII values with 0xfffd
             for i in range(0,len(buffer)):
-                if buffer[i]>"\u007f":
-                    #print "swapping char "+str(i)+" ("+buffer[i]+")"
-                    buffer[i] = "\ufffd"
+                if sys.version_info[0] == 2:
+                    if buffer[i]>u"\u007f":
+                        #print "swapping char "+str(i)+" ("+buffer[i]+")"
+                        buffer[i] = u"\ufffd"
+                else: 
+                    if buffer[i]>"\u007f":
+                        #print "swapping char "+str(i)+" ("+buffer[i]+")"
+                        buffer[i] = "\ufffd"
             # return utf-8 encoding of modified username
             #print "modified username:"+buffer.value
             return buffer.value.encode('utf-8')

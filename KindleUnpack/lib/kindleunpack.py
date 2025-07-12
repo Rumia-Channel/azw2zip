@@ -12,17 +12,9 @@ import sys
 import codecs
 import traceback
 
-import json
-from collections import OrderedDict
-import pprint
-import re
-
-from compatibility_utils import PY2, binary_type, utf8_str, unicode_str, unescapeit
+from compatibility_utils import PY2, binary_type, utf8_str, unicode_str
 from compatibility_utils import unicode_argv, add_cp65001_codec
 from compatibility_utils import hexlify
-import safefilename
-
-from xml.sax.saxutils import escape as xmlescape
 
 add_cp65001_codec()
 
@@ -150,6 +142,9 @@ if PY2:
 #  0.80   converted to work with both python 2.7 and Python 3.3 and later
 #  0.81   various fixes
 #  0.82   Handle calibre-generated mobis that can have skeletons with no fragments
+#  0.83   Fix header item 114 being mistakenly treated as a string instead of a value
+#  0.84   Try to better follow the epub3 fixed layout spec when unpacking fixed layout mobis,
+#         and handle non-xml escaped titles in the ncx
 
 DUMP = False
 """ Set to True to dump all possible information. """
@@ -205,8 +200,9 @@ from mobi_cover import CoverProcessor, get_image_type
 from mobi_pagemap import PageMapProcessor
 from mobi_dict import dictSupport
 
-from azw2zip_config import azw2zipConfig
-azw2zip_cfg = azw2zipConfig()
+# azw2zip用のグローバル変数
+azw2zip_cfg = None
+
 
 def processSRCS(i, files, rscnames, sect, data):
     # extract the source zip archive and save it.
@@ -336,9 +332,9 @@ def processCRES(i, files, rscnames, sect, data, beg, rsc_ptr, use_hd):
         imgname = rscnames[rsc_ptr]
         imgdest = files.imgdir
     else:
-        imgname = "HDimage%05d.%s" % (i-beg+1, imgtype)
+        imgname = "HDimage%05d.%s" % (i, imgtype)
         imgdest = files.hdimgdir
-    print("Extracting HD image: {0:s} from section {1:d}".format(imgname,i-beg+1))
+    print("Extracting HD image: {0:s} from section {1:d}".format(imgname,i))
     outimg = os.path.join(imgdest, imgname)
     with open(pathof(outimg), 'wb') as f:
         f.write(data)
@@ -403,7 +399,7 @@ def processRESC(i, files, rscnames, sect, data, k8resc):
     return rscnames, k8resc
 
 
-def processImage(i, files, rscnames, sect, data, beg, rsc_ptr, cover_offset):
+def processImage(i, files, rscnames, sect, data, beg, rsc_ptr, cover_offset, thumb_offset):
     global DUMP
     # Extract an Image
     imgtype = get_image_type(None, data)
@@ -419,10 +415,12 @@ def processImage(i, files, rscnames, sect, data, beg, rsc_ptr, cover_offset):
             sect.setsectiondescription(i,"Mysterious Section, first four bytes %s extracting as %s" % (describe(data[0:4]), fname))
         return rscnames, rsc_ptr
 
-    imgname = "image%05d.%s" % (i-beg+1, imgtype)
+    imgname = "image%05d.%s" % (i, imgtype)
     if cover_offset is not None and i == beg + cover_offset:
-        imgname = "cover%05d.%s" % (i-beg+1, imgtype)
-    print("Extracting image: {0:s} from section {1:d}".format(imgname,i-beg+1))
+        imgname = "cover%05d.%s" % (i, imgtype)
+    if thumb_offset is not None and i == beg + thumb_offset:
+        imgname = "thumb%05d.%s" % (i, imgtype)
+    print("Extracting image: {0:s} from section {1:d}".format(imgname,i))
     outimg = os.path.join(files.imgdir, imgname)
     with open(pathof(outimg), 'wb') as f:
         f.write(data)
@@ -454,18 +452,12 @@ def processPrintReplica(metadata, files, rscnames, mh):
             for j in range(sectionCount):
                 sectionOffset, sectionLength, = struct.unpack_from(b'>LL', rawML, tableIndexOffset)
                 tableIndexOffset += 8
-                pdf_fpath = u''
                 if j == 0:
-                    if azw2zip_cfg.isOutputPdf():
-                        pdf_fpath = os.path.join(files.outdir, '..', azw2zip_cfg.makeOutputFileName(metadata) + ('.%03d.pdf' % (i+1)))
                     entryName = os.path.join(files.outdir, files.getInputFileBasename() + ('.%03d.pdf' % (i+1)))
                 else:
                     entryName = os.path.join(files.outdir, files.getInputFileBasename() + ('.%03d.%03d.data' % ((i+1),j)))
                 with open(pathof(entryName), 'wb') as f:
                     f.write(rawML[sectionOffset:(sectionOffset+sectionLength)])
-                if pdf_fpath:
-                    with open(pathof(pdf_fpath), 'wb') as f:
-                        f.write(rawML[sectionOffset:(sectionOffset+sectionLength)])
     except Exception as e:
         print('Error processing Print Replica: ' + str(e))
 
@@ -549,9 +541,22 @@ def processMobi8(mh, metadata, sect, files, rscnames, pagemapproc, k8resc, obfus
         ncxmap['idtag'] = unicode_str(idtag)
         ncx_data[i] = ncxmap
 
+    # FYI:  KindleUnpack does *not* support mixed fixed/reflowable format epubs
+    # Books are assumed to be either fully fixed format or fully reflowable
+    
+    # look to see if this kf8 was a fixed format and if so
+    # set a viewport to be set in every xhtml file
+    viewport = None
+    if 'original-resolution' in metadata:
+        if 'true' == metadata.get('fixed-layout', [''])[0].lower():
+            resolution = metadata['original-resolution'][0].lower()
+            width, height = resolution.split('x')
+            if width.isdigit() and int(width) > 0 and height.isdigit() and int(height) > 0: 
+                viewport = 'width=%s, height=%s' % (width, height) 
+
     # convert the rawML to a set of xhtml files
     print("Building an epub-like structure")
-    htmlproc = XHTMLK8Processor(rscnames, k8proc)
+    htmlproc = XHTMLK8Processor(rscnames, k8proc, viewport)
     usedmap = htmlproc.buildXHTML()
 
     # write out the xhtml svg, and css files
@@ -579,7 +584,7 @@ def processMobi8(mh, metadata, sect, files, rscnames, pagemapproc, k8resc, obfus
                 fileinfo.append(["coverpage", 'Text', filename])
                 guidetext += cover.guide_toxml()
                 cover.writeXHTML()
-
+                
     n =  k8proc.getNumberOfParts()
     for i in range(n):
         part = k8proc.getPart(i)
@@ -611,37 +616,10 @@ def processMobi8(mh, metadata, sect, files, rscnames, pagemapproc, k8resc, obfus
         nav = NAVProcessor(files)
         nav.writeNAV(ncx_data, guidetext, metadata)
 
-    # 表紙の番号取得
-    cover_offset = int(mh.metadata.get('CoverOffset', ['-1'])[0])
-    if not CREATE_COVER_PAGE:
-        cover_offset = None
-
     # make an epub-like structure of it all
     print("Creating an epub-like file")
-    files.makeEPUB(usedmap, obfuscate_data, uuid, azw2zip_cfg.isOutputEpub(), azw2zip_cfg.makeOutputFileName(mh.getMetaData()), cover_offset)
+    files.makeEPUB(usedmap, obfuscate_data, uuid)
 
-
-def processZip(mh, metadata, files):
-    # make a zip
-    print("Creating a Zip file")
-    
-    # 表紙の番号取得
-    cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
-    if not CREATE_COVER_PAGE:
-        cover_offset = None
-
-    files.makeZip(azw2zip_cfg.makeOutputFileName(metadata), cover_offset, azw2zip_cfg.isCompressZip())
-
-def processImages(mh, metadata, files):
-    # make a images
-    print("Creating an Images directory")
-    
-    # 表紙の番号取得
-    cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
-    if not CREATE_COVER_PAGE:
-        cover_offset = None
-
-    files.makeImages(azw2zip_cfg.makeOutputFileName(metadata), cover_offset)
 
 def processMobi7(mh, metadata, sect, files, rscnames):
     global DUMP
@@ -821,6 +799,12 @@ def process_all_mobi_headers(files, apnxfile, sect, mhlst, K8Boundary, k8only=Fa
             # processing first part of a combination file
             end = K8Boundary
 
+        # Not sure the try/except is necessary, but just in case
+        try: 
+            thumb_offset = int(metadata.get('ThumbOffset', ['-1'])[0])
+        except:
+            thumb_offset = None
+
         cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
         if not CREATE_COVER_PAGE:
             cover_offset = None
@@ -870,41 +854,46 @@ def process_all_mobi_headers(files, apnxfile, sect, mhlst, K8Boundary, k8only=Fa
                 rscnames.append(None)
             else:
                 # if reached here should be an image ow treat as unknown
-                rscnames, rsc_ptr  = processImage(i, files, rscnames, sect, data, beg, rsc_ptr, cover_offset)
+                rscnames, rsc_ptr  = processImage(i, files, rscnames, sect, data, beg, rsc_ptr, cover_offset, thumb_offset)
         # done unpacking resources
 
-        metadata_bak = metadata.copy()
         # Print Replica
         if mh.isPrintReplica() and not k8only:
             processPrintReplica(metadata, files, rscnames, mh)
-        else:
-            # KF8 (Mobi 8)
-            if mh.isK8():
-                processMobi8(mh, metadata, sect, files, rscnames, pagemapproc, k8resc, obfuscate_data, apnxfile, epubver)
+            continue
 
-            # Old Mobi (Mobi 7)
-            elif not k8only:
-                processMobi7(mh, metadata, sect, files, rscnames)
+        # KF8 (Mobi 8)
+        if mh.isK8():
+            processMobi8(mh, metadata, sect, files, rscnames, pagemapproc, k8resc, obfuscate_data, apnxfile, epubver)
 
-            # process any remaining unknown sections of the palm file
-            processUnknownSections(mh, sect, files, K8Boundary)
+        # Old Mobi (Mobi 7)
+        elif not k8only:
+            processMobi7(mh, metadata, sect, files, rscnames)
 
-        # Zip
-        if azw2zip_cfg.isOutputZip():
-            processZip(mh, metadata_bak, files)
+        # process any remaining unknown sections of the palm file
+        processUnknownSections(mh, sect, files, K8Boundary)
 
-        if azw2zip_cfg.isOutputImages():
-            processImages(mh, metadata_bak, files)
+        # azw2zip用の出力処理
+        if azw2zip_cfg is not None:
+            # メタデータを取得
+            metadata_bak = mh.getMetaData()
+            
+            # Zip
+            if azw2zip_cfg.isOutputZip():
+                processZip(mh, metadata_bak, files)
 
-        fname_txt = os.path.join(files.getOutputDir(), 'fname.txt')
-        f = open(fname_txt, 'wb')
-        f.write(azw2zip_cfg.makeOutputFileName(metadata_bak).encode('utf-8'))
-        f.close()
+            if azw2zip_cfg.isOutputImages():
+                processImages(mh, metadata_bak, files)
+
+            # ファイル名をfname.txtに出力
+            fname_txt = os.path.join(files.outdir, 'fname.txt')
+            with open(pathof(fname_txt), 'wb') as f:
+                f.write(azw2zip_cfg.makeOutputFileName(metadata_bak).encode('utf-8'))
 
     return
 
 
-def unpackBook(infile, outdir, apnxfile=None, epubver='A', use_hd=False, dodump=False, dowriteraw=False, dosplitcombos=False):
+def unpackBook(infile, outdir, apnxfile=None, epubver='2', use_hd=False, dodump=False, dowriteraw=False, dosplitcombos=False):
     global DUMP
     global WRITE_RAW_DATA
     global SPLIT_COMBO_MOBIS
@@ -975,8 +964,6 @@ def unpackBook(infile, outdir, apnxfile=None, epubver='A', use_hd=False, dodump=
     if hasK8:
         files.makeK8Struct()
 
-    files.makeZipStruct()
-
     process_all_mobi_headers(files, apnxfile, sect, mhlst, K8Boundary, False, epubver, use_hd)
 
     if DUMP:
@@ -984,23 +971,28 @@ def unpackBook(infile, outdir, apnxfile=None, epubver='A', use_hd=False, dodump=
     return
 
 
-def usage(progname):
-    print("")
-    print("Description:")
-    print("  Unpacks an unencrypted Kindle/MobiPocket ebook to html and images")
-    print("  or an unencrypted Kindle/Print Replica ebook to PDF and images")
-    print("  into the specified output folder.")
-    print("Usage:")
-    print("  %s -r -s -p apnxfile -d -h --epub_version= infile [outdir]" % progname)
-    print("Options:")
-    print("    -h                 print this help message")
-    print("    -i                 use HD Images, if present, to overwrite reduced resolution images")
-    print("    -s                 split combination mobis into mobi7 and mobi8 ebooks")
-    print("    -p APNXFILE        path to an .apnx file associated with the azw3 input (optional)")
-    print("    --epub_version=    specify epub version to unpack to: 2, 3, A (for automatic) or ")
-    print("                         F (force to fit to epub2 definitions), default is 2")
-    print("    -d                 dump headers and other info to output and extra files")
-    print("    -r                 write raw data to the output folder")
+def processZip(mh, metadata, files):
+    # make a zip
+    print("Creating a Zip file")
+    
+    # 表紙の番号取得
+    cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
+    if not CREATE_COVER_PAGE:
+        cover_offset = None
+
+    files.makeZip(azw2zip_cfg.makeOutputFileName(metadata), cover_offset, azw2zip_cfg.isCompressZip())
+
+
+def processImages(mh, metadata, files):
+    # make a images
+    print("Creating an Images directory")
+    
+    # 表紙の番号取得
+    cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
+    if not CREATE_COVER_PAGE:
+        cover_offset = None
+
+    files.makeImages(azw2zip_cfg.makeOutputFileName(metadata), cover_offset)
 
 
 def kindleunpack(infile, outdir, cfg):
@@ -1022,16 +1014,34 @@ def kindleunpack(infile, outdir, cfg):
 
     return 0
 
+
+def usage(progname):
+    print("")
+    print("Description:")
+    print("  Unpacks an unencrypted Kindle/MobiPocket ebook to html and images")
+    print("  or an unencrypted Kindle/Print Replica ebook to PDF and images")
+    print("  into the specified output folder.")
+    print("Usage:")
+    print("  %s -r -s -p apnxfile -d -h --epub_version= infile [outdir]" % progname)
+    print("Options:")
+    print("    -h                 print this help message")
+    print("    -i                 use HD Images, if present, to overwrite reduced resolution images")
+    print("    -s                 split combination mobis into mobi7 and mobi8 ebooks")
+    print("    -p APNXFILE        path to an .apnx file associated with the azw3 input (optional)")
+    print("    --epub_version=    specify epub version to unpack to: 2, 3, A (for automatic) or ")
+    print("                         F (force to fit to epub2 definitions), default is 2")
+    print("    -d                 dump headers and other info to output and extra files")
+    print("    -r                 write raw data to the output folder")
+
+
 def main(argv=unicode_argv()):
     global DUMP
     global WRITE_RAW_DATA
     global SPLIT_COMBO_MOBIS
-    global UPDATED_TITLE
-    global OUTPUT_EPUB
 
-    print("KindleUnpack v0.82")
+    print("KindleUnpack v0.83")
     print("   Based on initial mobipocket version Copyright © 2009 Charles M. Hannum <root@ihack.net>")
-    print("   Extensive Extensions and Improvements Copyright © 2009-2014 ")
+    print("   Extensive Extensions and Improvements Copyright © 2009-2020 ")
     print("       by:  P. Durrant, K. Hendricks, S. Siebert, fandrieu, DiapDealer, nickredding, tkeo.")
     print("   This program is free software: you can redistribute it and/or modify")
     print("   it under the terms of the GNU General Public License as published by")
@@ -1039,7 +1049,7 @@ def main(argv=unicode_argv()):
 
     progname = os.path.basename(argv[0])
     try:
-        opts, args = getopt.getopt(argv[1:], "dhirspt:", ['epub_version='])
+        opts, args = getopt.getopt(argv[1:], "dhirsp:", ['epub_version='])
     except getopt.GetoptError as err:
         print(str(err))
         usage(progname)
@@ -1052,11 +1062,6 @@ def main(argv=unicode_argv()):
     apnxfile = None
     epubver = '2'
     use_hd = False
-    UPDATED_TITLE = False
-    COMPRESS_ZIP = False
-    OUTPUT_ZIP = True
-    OUTPUT_EPUB = False
-    OUTPUT_IMAGES = False
 
     for o, a in opts:
         if o == "-h":
@@ -1070,16 +1075,6 @@ def main(argv=unicode_argv()):
             WRITE_RAW_DATA = True
         if o == "-s":
             SPLIT_COMBO_MOBIS = True
-        if o == "-t":
-            UPDATED_TITLE = True
-        if o == "-c":
-            COMPRESS_ZIP = True
-        if o == "-z":
-            OUTPUT_ZIP = True
-        if o == "-e":
-            OUTPUT_EPUB = True
-        if o == "-f":
-            OUTPUT_IMAGES = True
         if o == "-p":
             apnxfile = a
         if o == "--epub_version":

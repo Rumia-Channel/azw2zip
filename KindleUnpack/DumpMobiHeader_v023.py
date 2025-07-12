@@ -322,7 +322,7 @@ class HdrParser:
                 111 : 'Type_(111)',
                 112 : 'Source_(112)',
                 113 : 'ASIN_(113)',
-                114 : 'Version_Number_(114)',
+                # 114 : 'Version_Number_(114)',
                 117 : 'Adult_(117)',
                 118 : 'Retail_Price_(118)',
                 119 : 'Retail_Currency_(119)',
@@ -368,7 +368,7 @@ class HdrParser:
                 528 : 'Override-kindle-fonts_(528)',
                 529 : 'Compression_Upgraded_(529)',        # was 'kindlegen_Source-Target_(529)'
                 530 : 'Soft_Hyphens_In_Content_(530)',
-                531 : 'Dictionary_In_Langague_(531)',
+                531 : 'Dictionary_In_Languague_(531)',
                 532 : 'Dictionary_Out_Language_(532)',
                 533 : 'Font_Converted_(533)',
                 534 : 'Amazon_Creator_Info_(534)',         # was 'Input_Source_Type_(534)'
@@ -385,6 +385,7 @@ class HdrParser:
                 599 : 'Application_Max_(599)'
         }
         id_map_values = {
+                114 : 'Version_Number_(114)',
                 115 : 'Sample_(115)',
                 116 : 'Start_Reading_(116)',
                 121 : 'Mobi8_Boundary_Section_(121)',
@@ -486,7 +487,7 @@ def dump_contexth(cpage, extheader):
         111 : 'Type_(111)',
         112 : 'Source_(112)',
         113 : 'ASIN_(113)',
-        114 : 'Version_Number_(114)',
+        # 114 : 'Version_Number_(114)',
         117 : 'Adult_(117)',
         118 : 'Retail_Price_(118)',
         119 : 'Retail_Currency_(119)',
@@ -532,7 +533,7 @@ def dump_contexth(cpage, extheader):
         528 : 'Override-kindle-fonts_(528)',
         529 : 'Compression_Upgraded_(529)',        # was 'kindlegen_Source-Target_(529)'
         530 : 'Soft_Hyphens_In_Content_(530)',
-        531 : 'Dictionary_In_Langague_(531)',
+        531 : 'Dictionary_In_Languague_(531)',
         532 : 'Dictionary_Out_Language_(532)',
         533 : 'Font_Converted_(533)',
         534 : 'Amazon_Creator_Info_(534)',         # was 'Input_Source_Type_(534)'
@@ -549,6 +550,7 @@ def dump_contexth(cpage, extheader):
         599 : 'Application_Max_(599)'
     }
     id_map_values = {
+        114 : 'Version_Number_(114)',
         115 : 'Sample_(115)',
         116 : 'Start_Reading_(116)',
         121 : 'Mobi8_Boundary_Section_(121)',
@@ -624,7 +626,7 @@ def usage(progname):
 
 
 def main(argv=sys.argv):
-    print("DumpMobiHeader v022")
+    print("DumpMobiHeader v023")
     progname = os.path.basename(argv[0])
     try:
         opts, args = getopt.getopt(sys.argv[1:], "h")
@@ -782,7 +784,12 @@ def main(argv=sys.argv):
                 desc = "Image " + imgtype
             else:
                 desc = hexlify(dtext)
-                desc = desc + " " + dtext.decode('ascii')
+                ascii_rep = ''
+                try:
+                    ascii_rep = dtext.decode('ascii')
+                except:
+                    ascii_rep = ""
+                desc = desc + " " + ascii_rep
             if desc != "CONT":
                 print("    %04d - %04x: %s [%d]" % (i, i, desc, dlen))
 

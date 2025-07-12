@@ -93,29 +93,13 @@ import sys, os
 import time
 import traceback
 
-
-#@@CALIBRE_COMPAT_CODE_START@@
-import sys, os
-
-# Explicitly allow importing everything ...
-if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Bugfix for Calibre < 5:
-if "calibre" in sys.modules and sys.version_info[0] == 2:
-    from calibre.utils.config import config_dir
-    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
-        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
-
-# Explicitly set the package identifier so we are allowed to import stuff ...
-#__package__ = "DeDRM_plugin"
-
-#@@CALIBRE_COMPAT_CODE_END@@
+#@@CALIBRE_COMPAT_CODE@@
 
 try: 
-    import __version
+    try: 
+        import __version
+    except:
+        import __version
 except: 
     print("#############################")
     print("Failed to load the DeDRM plugin")
@@ -153,8 +137,10 @@ try:
 except:
     config_dir = ""
 
-
-import utilities
+try: 
+    import utilities
+except: 
+    import utilities
 
 
 PLUGIN_NAME = __version.PLUGIN_NAME
@@ -176,7 +162,7 @@ class DeDRM(FileTypePlugin):
 
 
     def cli_main(self, data):
-        from .standalone import main
+        from standalone import main
         main(data)
     
     def initialize(self):
@@ -230,12 +216,16 @@ class DeDRM(FileTypePlugin):
             traceback.print_exc()
             raise
 
-    def postProcessEPUB(self, path_to_ebook):
+    def postProcessEPUB(self, path_to_ebook, path_to_original_ebook = None):
         # This is called after the DRM is removed (or if no DRM was present)
         # It does stuff like de-obfuscating fonts (by calling checkFonts) 
         # or removing watermarks. 
 
         postProcessStart = time.time()
+        postProcessingNeeded = False
+
+        # Save a backup of the EPUB path after DRM removal but before any postprocessing is done.
+        pre_postprocessing_EPUB_path = path_to_ebook
 
         try: 
             import prefs
@@ -261,6 +251,15 @@ class DeDRM(FileTypePlugin):
             
             postProcessEnd = time.time()
             print("{0} v{1}: Post-processing took {2:.1f} seconds".format(PLUGIN_NAME, PLUGIN_VERSION, postProcessEnd-postProcessStart))
+
+
+            # If the EPUB is DRM-free (path_to_original_ebook will only be set in this case), 
+            # and the post-processing hasn't changed anything in the EPUB, 
+            # return the raw original file from path_to_original_ebook from before the
+            # zipfix code was executed.
+            if ((path_to_ebook == pre_postprocessing_EPUB_path) and path_to_original_ebook is not None):
+                print("{0} v{1}: Post-processing didn't do anything on DRM-free EPUB, returning original file".format(PLUGIN_NAME, PLUGIN_VERSION))
+                return path_to_original_ebook
 
             return path_to_ebook
 
@@ -313,9 +312,9 @@ class DeDRM(FileTypePlugin):
         # import the LCP handler
         import lcpdedrm
 
-        if (lcpdedrm.isLCPbook(path_to_ebook)):
+        if (lcpdedrm.isLCPbook(inf.name)):
             try: 
-                retval = lcpdedrm.decryptLCPbook(path_to_ebook, dedrmprefs['lcp_passphrases'], self)
+                retval = lcpdedrm.decryptLCPbook(inf.name, dedrmprefs['lcp_passphrases'], self)
             except:
                 print("Looks like that didn't work:")
                 raise
@@ -642,7 +641,7 @@ class DeDRM(FileTypePlugin):
 
         # Not a Barnes & Noble nor an Adobe Adept
         # Probably a DRM-free EPUB, but we should still check for fonts.
-        return self.postProcessEPUB(inf.name)
+        return self.postProcessEPUB(inf.name, path_to_ebook)
 
     
     def PDFIneptDecrypt(self, path_to_ebook):
@@ -928,12 +927,15 @@ class DeDRM(FileTypePlugin):
         kindleDatabases = list(dedrmprefs['kindlekeys'].items())
 
         try:
-            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime)
+            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime,dedrmprefs["kindleextrakeyfile"])
         except Exception as e:
             decoded = False
             # perhaps we need to get a new default Kindle for Mac/PC key
             defaultkeys = []
             print("{0} v{1}: Failed to decrypt with error: {2}".format(PLUGIN_NAME, PLUGIN_VERSION,e.args[0]))
+
+            traceback.print_exc()
+
             print("{0} v{1}: Looking for new default Kindle Key after {2:.1f} seconds".format(PLUGIN_NAME, PLUGIN_VERSION, time.time()-self.starttime))
 
             try:

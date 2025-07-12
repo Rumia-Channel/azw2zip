@@ -92,13 +92,14 @@ def unpad(data, padding=16):
 
     return data[:-pad_len]
 
+#@@CALIBRE_COMPAT_CODE@@
 
 from utilities import SafeUnbuffered
+from argv_utils import unicode_argv
 
 iswindows = sys.platform.startswith('win')
 isosx = sys.platform.startswith('darwin')
 
-from argv_utils import unicode_argv
 
 class ADEPTError(Exception):
     pass
@@ -833,7 +834,7 @@ def num_value(x):
     x = resolve1(x)
     if not (isinstance(x, int) or isinstance(x, Decimal)):
         if STRICT:
-            raise PDFTypeError('Int or Float required: %r' % x)
+            raise PDFTypeError('Int or Decimal required: %r' % x)
         return 0
     return x
 
@@ -1366,14 +1367,14 @@ class PDFDocument(object):
 
     def process_with_aes(self, key, encrypt, data, repetitions = 1, iv = None):
         if iv is None:
-            keylen = len(key)
-            iv = bytes([0x00]*keylen)
+            iv = bytes(bytearray(16))
+
+        aes = AES.new(key, AES.MODE_CBC, iv)
 
         if not encrypt:
-            plaintext = AES.new(key,AES.MODE_CBC,iv, True).decrypt(data)
+            plaintext = aes.decrypt(data)
             return plaintext
         else:
-            aes = AES.new(key, AES.MODE_CBC, iv, False)
             new_data = bytes(data * repetitions)
             crypt = aes.encrypt(new_data)
             return crypt
@@ -1394,10 +1395,18 @@ class PDFDocument(object):
                     raise Exception("K1 < 32 ...")
                 #def process_with_aes(self, key: bytes, encrypt: bool, data: bytes, repetitions: int = 1, iv: bytes = None):
                 E = self.process_with_aes(K[:16], True, K1, 64, K[16:32])
-                K = (hashlib.sha256, hashlib.sha384, hashlib.sha512)[sum(E) % 3](E).digest()
+                E = bytearray(E)
+
+                E_mod_3 = 0
+                for i in range(16):
+                    E_mod_3 += E[i]
+
+                E_mod_3 %= 3
+
+                K = (hashlib.sha256, hashlib.sha384, hashlib.sha512)[E_mod_3](E).digest()
 
                 if round_number >= 64:
-                    ch = int.from_bytes(E[-1:], "big", signed=False)
+                    ch = E[-1:][0]  # get last byte
                     if ch <= round_number - 32:
                         done = True
 
@@ -1478,14 +1487,23 @@ class PDFDocument(object):
             EncMetadata = b'True'
         if (EncMetadata == ('False' or 'false') or V < 4) and R >= 4:
             hash.update(codecs.decode(b'ffffffff','hex'))
+
+        # Finish hash:
+        hash = hash.digest()
+        
         if R >= 3:
             # 8
             for _ in range(50):
-                hash = hashlib.md5(hash.digest()[:length//8])
-        key = hash.digest()[:length//8]
+                hash = hashlib.md5(hash[:length//8]).digest()
+        if R == 2:
+            # R=2 only uses first five bytes.
+            key = hash[:5]
+        else:
+            key = hash[:length//8]
+
         if R == 2:
             # Algorithm 3.4
-            u1 = ARC4.new(key).decrypt(password)
+            u1 = ARC4.new(key).decrypt(self.PASSWORD_PADDING)
         elif R >= 3:
             # Algorithm 3.5
             hash = hashlib.md5(self.PASSWORD_PADDING) # 2
@@ -1498,6 +1516,7 @@ class PDFDocument(object):
                     k = b''.join(bytes([c ^ i]) for c in key )
                 x = ARC4.new(k).decrypt(x)
             u1 = x+x # 32bytes total
+        
         if R == 2:
             is_authenticated = (u1 == U)
         else:
@@ -2023,7 +2042,7 @@ class PDFParser(PSStackParser):
         except PDFNoValidXRef:
             # fallback
             self.seek(0)
-            pat = re.compile(b'^(\\d+)\\s+(\\d+)\\s+obj\\b')
+            pat = re.compile(br'^(\\d+)\\s+(\\d+)\\s+obj\\b')
             offsets = {}
             xref = PDFXRef()
             while 1:

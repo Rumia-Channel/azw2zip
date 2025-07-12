@@ -16,29 +16,10 @@ import zipfile
 from io import BytesIO
 
 
-
-#@@CALIBRE_COMPAT_CODE_START@@
-import sys, os
-
-# Explicitly allow importing everything ...
-if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Bugfix for Calibre < 5:
-if "calibre" in sys.modules and sys.version_info[0] == 2:
-    from calibre.utils.config import config_dir
-    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
-        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
-
-# Explicitly set the package identifier so we are allowed to import stuff ...
-#__package__ = "DeDRM_plugin"
-
-#@@CALIBRE_COMPAT_CODE_END@@
+#@@CALIBRE_COMPAT_CODE@@
 
 
-from ion import DrmIon, DrmIonVoucher
+from ion import DrmIon, DrmIonVoucher, SKeyList
 
 
 
@@ -47,8 +28,12 @@ __version__ = '2.0'
 
 
 class KFXZipBook:
-    def __init__(self, infile):
+    def __init__(self, infile,skeyfile=None):
         self.infile = infile
+        if skeyfile is not None:
+          self.skeylist=SKeyList(skeyfile)
+        else:
+          self.skeylist=None
         self.voucher = None
         self.decrypted = {}
 
@@ -67,7 +52,7 @@ class KFXZipBook:
                         self.decrypt_voucher(totalpids)
                     print("Decrypting KFX DRMION: {0}".format(filename))
                     outfile = BytesIO()
-                    DrmIon(BytesIO(data[8:-8]), lambda name: self.voucher).parse(outfile)
+                    DrmIon(BytesIO(data[8:-8]), lambda name: self.voucher,self.skeylist).parse(outfile)
                     self.decrypted[filename] = outfile.getvalue()
 
         if not self.decrypted:
@@ -85,22 +70,24 @@ class KFXZipBook:
                     if b'ProtectedData' in data:
                         break   # found DRM voucher
             else:
-                raise Exception("The .kfx-zip archive contains an encrypted DRMION file without a DRM voucher")
-
+                #raise Exception("The .kfx-zip archive contains an encrypted DRMION file without a DRM voucher")
+                print("The .kfx-zip archive contains an encrypted DRMION file without a DRM voucher. Just in case it is a rare decrypted KFX, we continue")
+                self.voucher = None
+                return
         print("Decrypting KFX DRM voucher: {0}".format(info.filename))
 
         for pid in [''] + totalpids:
             # Belt and braces. PIDs should be unicode strings, but just in case...
             if isinstance(pid, bytes):
                 pid = pid.decode('ascii')
-            for dsn_len,secret_len in [(0,0), (16,0), (16,40), (32,40), (40,0), (40,40)]:
+            for dsn_len,secret_len in [(0,0), (16,0), (16,40), (32,0), (32,40), (40,0), (40,40)]:
                 if len(pid) == dsn_len + secret_len:
                     break       # split pid into DSN and account secret
             else:
                 continue
 
             try:
-                voucher = DrmIonVoucher(BytesIO(data), pid[:dsn_len], pid[dsn_len:])
+                voucher = DrmIonVoucher(BytesIO(data), pid[:dsn_len], pid[dsn_len:],self.skeylist)
                 voucher.parse()
                 voucher.decryptvoucher()
                 break
@@ -108,7 +95,9 @@ class KFXZipBook:
                 traceback.print_exc()
                 pass
         else:
-            raise Exception("Failed to decrypt KFX DRM voucher with any key")
+            print("Failed to decrypt KFX DRM voucher with any key... Hoping that keylist has a book key. ")
+            self.voucher = voucher
+            return
 
         print("KFX DRM voucher successfully decrypted")
 

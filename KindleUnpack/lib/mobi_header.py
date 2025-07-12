@@ -70,7 +70,7 @@ def dump_contexth(cpage, extheader):
         111 : 'Type',
         112 : 'Source',
         113 : 'ASIN',
-        114 : 'versionNumber',
+        # 114 : 'versionNumber',
         117 : 'Adult',
         118 : 'Retail-Price',
         119 : 'Retail-Currency',
@@ -130,6 +130,7 @@ def dump_contexth(cpage, extheader):
         544 : 'Unknown_544',
     }
     id_map_values = {
+        114 : 'versionNumber',
         115 : 'sample',
         116 : 'StartOffset',
         121 : 'Mobi8-Boundary-Section',
@@ -403,7 +404,7 @@ class MobiHeader:
         111 : 'Type',
         112 : 'Source',
         113 : 'ASIN',
-        114 : 'versionNumber',
+        # 114 : 'versionNumber',
         117 : 'Adult',
         118 : 'Retail-Price',
         119 : 'Retail-Currency',
@@ -463,6 +464,7 @@ class MobiHeader:
         544 : 'Unknown_544',
     }
     id_map_values = {
+        114 : 'versionNumber',
         115 : 'sample',
         116 : 'StartOffset',
         121 : 'Mobi8-Boundary-Section',
@@ -661,7 +663,7 @@ class MobiHeader:
             return
         num_items, = struct.unpack(b'>L', self.exth[8:12])
         pos = 12
-        print("Key Size Decription                     Value")
+        print("Key Size Description                    Value")
         for _ in range(num_items):
             id, size = struct.unpack(b'>LL', self.exth[pos:pos+8])
             contentsize = size-8
@@ -789,7 +791,7 @@ class MobiHeader:
     def Language(self):
         langcode = struct.unpack(b'!L', self.header[0x5c:0x60])[0]
         langid = langcode & 0xFF
-        sublangid = (langcode >> 8) & 0xFF
+        sublangid = (langcode >> 10) & 0xFF
         return getLanguage(langid, sublangid)
 
     def DictInLanguage(self):
@@ -923,10 +925,7 @@ class MobiHeader:
         print("Codec:", self.codec)
         print("Title:", self.title)
         if 'Updated_Title' in self.metadata:
-            try:
-                print("EXTH Title:", self.metadata['Updated_Title'][0])
-            except UnicodeEncodeError:
-                print("EXTH Title:", self.metadata['Updated_Title'][0].encode('cp932', 'replace').decode('cp932'))
+            print("EXTH Title:", self.metadata['Updated_Title'][0])
         if self.compression == 0x4448:
             print("Huffdic compression")
         elif self.compression == 2:

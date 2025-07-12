@@ -143,13 +143,28 @@ def main(argv=unicode_argv()):
             exit(1)
         
         print(u"k4i作成: 開始: {}".format(k4i_dir))
-        if debug_mode:
+        try:
+            # デバッグ情報を常に表示するように変更
+            print(u"Kindleキー抽出を試行中...")
             kindlekey.getkey(k4i_dir)
-        else:
-            with redirect_stdout(open(os.devnull, 'w')):
-                kindlekey.getkey(k4i_dir)
-        k4i_files = glob.glob(os.path.join(k4i_dir, '*.k4i'))
-        print(u"k4i作成: 完了: {}".format(k4i_files[0]))
+            k4i_files = glob.glob(os.path.join(k4i_dir, '*.k4i'))
+            if len(k4i_files) > 0:
+                print(u"k4i作成: 完了: {}".format(k4i_files[0]))
+            else:
+                print(u"エラー: k4iファイルの作成に失敗しました")
+                print(u"注意: k4iファイルの作成には以下が必要です:")
+                print(u"  - Kindle for PC/Macがインストールされていること")
+                print(u"  - Kindleアプリでアカウントにログインしていること")
+                print(u"  - Kindleアプリで書籍をダウンロードしたことがあること")
+                print(u"")
+                print(u"既存のk4iファイルがある場合は、{}ディレクトリに配置してください".format(k4i_dir))
+                exit(1)
+        except Exception as e:
+            print(u"エラー: k4iファイルの作成中にエラーが発生しました: {}".format(str(e)))
+            print(u"詳細エラー情報:")
+            import traceback
+            traceback.print_exc()
+            exit(1)
     else:
         for k4i_fpath in k4i_files:
             print(u"k4i: {}".format(k4i_fpath))

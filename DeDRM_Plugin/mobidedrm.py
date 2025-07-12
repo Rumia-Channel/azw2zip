@@ -80,10 +80,13 @@ import sys
 import os
 import struct
 import binascii
+
+
+#@@CALIBRE_COMPAT_CODE@@
+
+
 from alfcrypto import Pukall_Cipher
-
 from utilities import SafeUnbuffered
-
 from argv_utils import unicode_argv
 
 
@@ -103,19 +106,26 @@ def PC1(key, src, decryption=True):
     except: 
         raise
 
-# accepts unicode returns unicode
+letters = b'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'
+
+def crc32(s):
+    return (~binascii.crc32(s,-1))&0xFFFFFFFF
+
 def checksumPid(s):
-    letters = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'
-    crc = (~binascii.crc32(s.encode('utf-8'),-1))&0xFFFFFFFF
+
+    s = s.encode()
+
+
+    crc = crc32(s)
     crc = crc ^ (crc >> 16)
     res = s
     l = len(letters)
     for i in (0,1):
         b = crc & 0xff
         pos = (b // l) ^ (b % l)
-        res += letters[pos%l]
+        res += bytes(bytearray([letters[pos%l]]))
         crc >>= 8
-    return res
+    return res.decode()
 
 # expects bytearray
 def getSizeOfTrailingDataEntries(ptr, size, flags):
@@ -124,7 +134,11 @@ def getSizeOfTrailingDataEntries(ptr, size, flags):
         if size <= 0:
             return result
         while True:
-            v = ptr[size-1]
+            if sys.version_info[0] == 2:
+                v = ord(ptr[size-1])
+            else:
+                v = ptr[size-1]
+
             result |= (v & 0x7F) << bitpos
             bitpos += 7
             size -= 1
@@ -140,7 +154,10 @@ def getSizeOfTrailingDataEntries(ptr, size, flags):
     # if multibyte data is included in the encryped data, we'll
     # have already cleared this flag.
     if flags & 1:
-        num += (ptr[size - num - 1] & 0x3) + 1
+        if sys.version_info[0] == 2:
+            num += (ord(ptr[size - num - 1]) & 0x3) + 1
+        else: 
+            num += (ptr[size - num - 1] & 0x3) + 1
     return num
 
 
@@ -299,7 +316,10 @@ class MobiBook:
         for pid in pidlist:
             bigpid = pid.encode('utf-8').ljust(16,b'\0')
             temp_key = PC1(keyvec1, bigpid, False)
-            temp_key_sum = sum(temp_key) & 0xff
+            if sys.version_info[0] == 2:
+                temp_key_sum = sum(map(ord,temp_key)) & 0xff
+            else:
+                temp_key_sum = sum(temp_key) & 0xff
             found_key = None
             for i in range(count):
                 verification, size, type, cksum, cookie = struct.unpack('>LLLBxxx32s', data[i*0x30:i*0x30+0x30])
@@ -315,7 +335,11 @@ class MobiBook:
             # Then try the default encoding that doesn't require a PID
             pid = '00000000'
             temp_key = keyvec1
-            temp_key_sum = sum(temp_key) & 0xff
+            if sys.version_info[0] == 2:
+                temp_key_sum = sum(map(ord,temp_key)) & 0xff
+            else:
+                temp_key_sum = sum(temp_key) & 0xff
+            
             for i in range(count):
                 verification, size, type, cksum, cookie = struct.unpack('>LLLBxxx32s', data[i*0x30:i*0x30+0x30])
                 if cksum == temp_key_sum:

@@ -53,11 +53,17 @@ def SHA1(message):
 def encode(data, map):
     result = b''
     for char in data:
-        value = char
+        if sys.version_info[0] == 2:
+            value = ord(char)
+        else:
+            value = char
+
         Q = (value ^ 0x80) // len(map)
         R = value % len(map)
-        result += bytes([map[Q]])
-        result += bytes([map[R]])
+
+        result += bytes(bytearray([map[Q]]))
+        result += bytes(bytearray([map[R]]))
+
     return result
 
 # Hash the bytes in data and then encode the digest with the characters in map
@@ -84,8 +90,11 @@ def decode(data,map):
 def getTwoBitsFromBitField(bitField,offset):
     byteNumber = offset // 4
     bitPosition = 6 - 2*(offset % 4)
-    return bitField[byteNumber] >> bitPosition & 3
-
+    if sys.version_info[0] == 2:
+        return ord(bitField[byteNumber]) >> bitPosition & 3
+    else:
+        return bitField[byteNumber] >> bitPosition & 3
+    
 # Returns the six bits at offset from a bit field
 def getSixBitsFromBitField(bitField,offset):
     offset *= 3
@@ -97,7 +106,8 @@ def encodePID(hash):
     global charMap3
     PID = b''
     for position in range (0,8):
-        PID += bytes([charMap3[getSixBitsFromBitField(hash,position)]])
+        PID += bytes(bytearray([charMap3[getSixBitsFromBitField(hash,position)]]))
+        
     return PID
 
 # Encryption table used to generate the device PID
@@ -134,7 +144,7 @@ def generateDevicePID(table,dsn,nbRoll):
         index = (index+1) %8
     for counter in range (0,8):
         index = ((((pid[counter] >>5) & 3) ^ pid[counter]) & 0x1f) + (pid[counter] >> 7)
-        pidAscii += bytes([charMap4[index]])
+        pidAscii += bytes(bytearray([charMap4[index]]))
     return pidAscii
 
 def crc32(s):
@@ -150,7 +160,7 @@ def checksumPid(s):
     for i in (0,1):
         b = crc & 0xff
         pos = (b // l) ^ (b % l)
-        res += bytes([charMap4[pos%l]])
+        res += bytes(bytearray([charMap4[pos%l]]))
         crc >>= 8
     return res
 
@@ -161,14 +171,17 @@ def pidFromSerial(s, l):
     crc = crc32(s)
     arr1 = [0]*l
     for i in range(len(s)):
-        arr1[i%l] ^= s[i]
+        if sys.version_info[0] == 2:
+            arr1[i%l] ^= ord(s[i])
+        else: 
+            arr1[i%l] ^= s[i]
     crc_bytes = [crc >> 24 & 0xff, crc >> 16 & 0xff, crc >> 8 & 0xff, crc & 0xff]
     for i in range(l):
         arr1[i] ^= crc_bytes[i&3]
     pid = b""
     for i in range(l):
         b = arr1[i] & 0xff
-        pid += bytes([charMap4[(b >> 7) + ((b >> 5 & 3) ^ (b & 0x1f))]])
+        pid += bytes(bytearray([charMap4[(b >> 7) + ((b >> 5 & 3) ^ (b & 0x1f))]]))
     return pid
 
 
@@ -176,6 +189,10 @@ def pidFromSerial(s, l):
 def getKindlePids(rec209, token, serialnum):
     if isinstance(serialnum,str):
         serialnum = serialnum.encode('utf-8')
+
+    if sys.version_info[0] == 2:
+        if isinstance(serialnum,unicode):
+            serialnum = serialnum.encode('utf-8')
 
     if rec209 is None:
         return [serialnum]
@@ -203,7 +220,7 @@ keynames = ['kindle.account.tokens','kindle.cookie.item','eulaVersionAccepted','
 def getK4Pids(rec209, token, kindleDatabase):
     global charMap1
     pids = []
-
+    #print(f"Entering getK4Pids with token {token} and kindleDatabase {kindleDatabase}")
     try:
         # Get the kindle account token, if present
         kindleAccountToken = bytearray.fromhex((kindleDatabase[1])['kindle.account.tokens'])
@@ -211,7 +228,10 @@ def getK4Pids(rec209, token, kindleDatabase):
     except KeyError:
         kindleAccountToken = b''
         pass
-
+    extraKindleTokens=kindleDatabase[1].get('kindle.account.secrets',[])
+    extraKindleTokens=[bytearray.fromhex(f) for f in extraKindleTokens]
+    extraKindleTokens.append(kindleAccountToken)
+    #extraKindleTokens=list(set(extraKindleTokens))
     try:
         # Get the DSN token, if present
         DSN = bytearray.fromhex((kindleDatabase[1])['DSN'])
@@ -253,36 +273,41 @@ def getK4Pids(rec209, token, kindleDatabase):
         DSN = encode(SHA1(MazamaRandomNumber+encodedIDString+encodedUsername),charMap1)
         #print "DSN",DSN.encode('hex')
         pass
-
+    extraDSNs=kindleDatabase[1].get('extra.dsns',[])
+    extraDSNs=[bytearray.fromhex(f) for f in extraDSNs]
+    extraDSNs.append(DSN)
     if rec209 is None:
-        pids.append(DSN+kindleAccountToken)
+        for DSN in extraDSNs:
+          for accToken in extraKindleTokens:
+            pids.append(DSN+accToken)
         return pids
 
     # Compute the device PID (for which I can tell, is used for nothing).
     table =  generatePidEncryptionTable()
-    devicePID = generateDevicePID(table,DSN,4)
-    devicePID = checksumPid(devicePID)
-    pids.append(devicePID)
+    for DSN in extraDSNs:
+      devicePID = generateDevicePID(table,DSN,4)
+      devicePID = checksumPid(devicePID)
+      pids.append(devicePID)
 
-    # Compute book PIDs
+      # Compute book PIDs
+      for accToken in extraKindleTokens:
+        # book pid
+        pidHash = SHA1(DSN+accToken+rec209+token)
+        bookPID = encodePID(pidHash)
+        bookPID = checksumPid(bookPID)
+        pids.append(bookPID)
 
-    # book pid
-    pidHash = SHA1(DSN+kindleAccountToken+rec209+token)
-    bookPID = encodePID(pidHash)
-    bookPID = checksumPid(bookPID)
-    pids.append(bookPID)
+        # variant 1
+        pidHash = SHA1(accToken+rec209+token)
+        bookPID = encodePID(pidHash)
+        bookPID = checksumPid(bookPID)
+        pids.append(bookPID)
 
-    # variant 1
-    pidHash = SHA1(kindleAccountToken+rec209+token)
-    bookPID = encodePID(pidHash)
-    bookPID = checksumPid(bookPID)
-    pids.append(bookPID)
-
-    # variant 2
-    pidHash = SHA1(DSN+rec209+token)
-    bookPID = encodePID(pidHash)
-    bookPID = checksumPid(bookPID)
-    pids.append(bookPID)
+      # variant 2
+      pidHash = SHA1(DSN+rec209+token)
+      bookPID = encodePID(pidHash)
+      bookPID = checksumPid(bookPID)
+      pids.append(bookPID)
 
     return pids
 

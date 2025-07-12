@@ -13,7 +13,6 @@ DUMP = False
 """ Set to True to dump all possible information. """
 
 import os
-import sys
 
 import re
 # note: re requites the pattern to be the exact same type as the data to be searched in python3
@@ -22,9 +21,6 @@ import re
 import zipfile
 import binascii
 from mobi_utils import mangle_fonts
-
-import distutils
-from distutils import dir_util
 
 class unpackException(Exception):
     pass
@@ -53,13 +49,12 @@ class fileNames:
         self.hdimgdir = os.path.join(self.outdir,'HDImages')
         if not unipath.exists(self.hdimgdir):
             unipath.mkdir(self.hdimgdir)
+        # azw2zip用のHDimages
+        self.HDimages = os.path.join(self.outdir,'azw6_images')
         self.outbase = os.path.join(self.outdir, os.path.splitext(os.path.split(infile)[1])[0])
 
     def getInputFileBasename(self):
         return os.path.splitext(os.path.basename(self.infile))[0]
-
-    def getOutputDir(self):
-        return self.outdir
 
     def makeK8Struct(self):
         self.k8dir = os.path.join(self.outdir,'mobi8')
@@ -74,7 +69,6 @@ class fileNames:
         self.k8images = os.path.join(self.k8oebps,'Images')
         if not unipath.exists(self.k8images):
             unipath.mkdir(self.k8images)
-        self.HDimages = os.path.join(self.outdir,'azw6_images')
         self.k8fonts = os.path.join(self.k8oebps,'Fonts')
         if not unipath.exists(self.k8fonts):
             unipath.mkdir(self.k8fonts)
@@ -84,15 +78,8 @@ class fileNames:
         self.k8text = os.path.join(self.k8oebps,'Text')
         if not unipath.exists(self.k8text):
             unipath.mkdir(self.k8text)
-
-    def makeZipStruct(self):
-        self.k8dir = os.path.join(self.outdir,'mobi8')
-        self.k8oebps = os.path.join(self.k8dir,'OEBPS')
-        self.k8images = os.path.join(self.k8oebps,'Images')
+        # azw2zip用のHDimages
         self.HDimages = os.path.join(self.outdir,'azw6_images')
-        self.zipdir = os.path.join(self.outdir,'zip')
-        if not unipath.exists(self.zipdir):
-            unipath.mkdir(self.zipdir)
 
     # recursive zip creation support routine
     def zipUpDir(self, myzip, tdir, localname, compress_type=zipfile.ZIP_DEFLATED):
@@ -107,13 +94,10 @@ class fileNames:
             if unipath.isfile(realfilePath):
                 myzip.write(pathof(realfilePath), pathof(localfilePath), compress_type)
             elif unipath.isdir(realfilePath):
-                self.zipUpDir(myzip, tdir, localfilePath)
+                self.zipUpDir(myzip, tdir, localfilePath, compress_type)
 
-    def makeEPUB(self, usedmap, obfuscate_data, uid, output_epub, fname, cover_offset):
-        bname = os.path.normpath(os.path.join(self.outdir, '..', fname + '.epub'))
-        if output_epub and not unipath.exists(os.path.dirname(bname)):
-            unipath.makedirs(os.path.dirname(bname))
-
+    def makeEPUB(self, usedmap, obfuscate_data, uid):
+        bname = os.path.join(self.k8dir, self.getInputFileBasename() + '.epub')
         # Create an encryption key for Adobe font obfuscation
         # based on the epub's uid
         if isinstance(uid,text_type):
@@ -171,14 +155,8 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
             with open(pathof(fileout),'wb') as f:
                 f.write(encryption.encode('utf-8'))
 
-        if not output_epub:
-            return
-        
         # ready to build epub
         self.outzip = zipfile.ZipFile(pathof(bname), 'w')
-
-        # HDイメージ差し替え
-        replaceHDimages(self.HDimages, self.k8images, cover_offset)
 
         # add the mimetype file uncompressed
         mimetype = b'application/epub+zip'
@@ -186,22 +164,27 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
         with open(pathof(fileout),'wb') as f:
             f.write(mimetype)
         nzinfo = ZipInfo('mimetype', compress_type=zipfile.ZIP_STORED)
-        #TTTTsstrwxrwxrwx0000000000ADVSHR
-        #^^^^____________________________ file type as explained above
-        #    ^^^_________________________ setuid, setgid, sticky
-        #       ^^^^^^^^^________________ permissions
-        #                ^^^^^^^^________ This is the "lower-middle byte" your post mentions
-        #                        ^^^^^^^^ DOS attribute bits
-        #    ‭0001100000000000000000000000‬
         nzinfo.external_attr = 0o600 << 16 # make this a normal file
-        #    ‭0000000000000000000000100000‬
-        nzinfo.external_attr |= 0x020
         self.outzip.writestr(nzinfo, mimetype)
+        # HD画像取り込み（azw2zip用）
+        if hasattr(self, 'HDimages'):
+            replaceHDimages(self.HDimages, self.k8images, None)
+        
         self.zipUpDir(self.outzip,self.k8dir,'META-INF')
         self.zipUpDir(self.outzip,self.k8dir,'OEBPS')
         self.outzip.close()
 
+    def makeZipStruct(self):
+        self.k8dir = os.path.join(self.outdir,'mobi8')
+        self.k8oebps = os.path.join(self.k8dir,'OEBPS')
+        self.k8images = os.path.join(self.k8oebps,'Images')
+        self.HDimages = os.path.join(self.outdir,'azw6_images')
+        self.zipdir = os.path.join(self.outdir,'zip')
+        if not unipath.exists(self.zipdir):
+            unipath.mkdir(self.zipdir)
+
     def makeZip(self, fname, cover_offset, zip_compress = False):
+        import distutils.dir_util
         bname = os.path.normpath(os.path.join(self.outdir, '..', fname + '.zip'))
         if not unipath.exists(os.path.dirname(bname)):
             unipath.makedirs(os.path.dirname(bname))
@@ -215,7 +198,7 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
             distutils.dir_util.copy_tree(self.imgdir, self.zipdir)
 
         # HDイメージ差し替え
-        replaceHDimages(self.HDimages, self.zipdir, cover_offset)
+        replaceHDimages(self.hdimgdir, self.zipdir, cover_offset)
         
         # zip作成
         if zip_compress:
@@ -225,8 +208,8 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
         self.outzip.close()
 
     def makeImages(self, fname, cover_offset):
+        import distutils.dir_util
         bname = os.path.normpath(os.path.join(self.outdir, '..', fname))
-        #bname = os.path.join(bname, "Images")
 
         if not unipath.exists(bname):
             unipath.makedirs(bname)
@@ -238,10 +221,12 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
             distutils.dir_util.copy_tree(self.imgdir, bname)
 
         # HDイメージ差し替え
-        replaceHDimages(self.HDimages, bname, cover_offset)
+        replaceHDimages(self.hdimgdir, bname, cover_offset)
+
 
 def replaceHDimages(src_dir, dest_dir, cover_offset):
     # HDイメージ差し替え
+    import distutils.dir_util
     if unipath.exists(src_dir):
         distutils.dir_util.copy_tree(src_dir, dest_dir)
 
