@@ -35,6 +35,10 @@ else:
 
 import safefilename as sfn
 
+# 全角→半角変換用テーブル（数字や記号をASCIIへ揃える）
+ZEN2HAN_DICT = dict((0xff00 + ch, 0x0020 + ch) for ch in range(0x5f))
+ZEN2HAN_DICT[0x3000] = 0x0020
+
 class azw2zipConfig:
 
     def __init__(self):
@@ -254,6 +258,44 @@ class azw2zipConfig:
             authors += author[index]
         return authors
 
+    def _extract_series_index(self, metadata):
+        """Updated_TitleやTitle-Pronunciationから巻数らしき数字を推測する"""
+        pron = metadata.get('Title-Pronunciation')
+        if pron and pron[0]:
+            match = re.search(r'(\d{1,4})\s*$', pron[0])
+            if match:
+                digits = match.group(1).translate(ZEN2HAN_DICT)
+                digits = digits.lstrip('0') or '0'
+                return digits
+
+        updated = metadata.get('Updated_Title')
+        if updated and updated[0]:
+            raw = _h.unescape(updated[0])
+            match = re.search(r'[：:]\s*([0-9０-９]+)', raw)
+            if match:
+                digits = match.group(1).translate(ZEN2HAN_DICT)
+                digits = re.sub(r'[^0-9]', '', digits)
+                if digits:
+                    digits = digits.lstrip('0') or '0'
+                    return digits
+
+        return ''
+
+    def _title_contains_index(self, title, series_index):
+        if not series_index or series_index == '0':
+            return True
+
+        idx_plain = series_index.lstrip('0') or series_index
+        candidates = {series_index, idx_plain, series_index.zfill(2), series_index.zfill(3)}
+        for candidate in candidates:
+            if candidate and candidate in title:
+                return True
+
+        if re.search(r'第\s*0*{}巻'.format(re.escape(idx_plain)), title):
+            return True
+
+        return False
+
     def makeOutputFileName(self, metadata):
         title = metadata.get('Title')[0]
         #
@@ -285,10 +327,12 @@ class azw2zipConfig:
         #
         title = sfn.safefilename(title, table=sfn.table2)
         authors = self.makeAuthors(author)
+        book_type = ''
+        if 'book-type' in metadata and metadata.get('book-type'):
+            book_type = str(metadata.get('book-type')[0]).lower()
 
         # 全角→半角用辞書
-        ZEN2HAN_dict = dict((0xff00 + ch, 0x0020 + ch) for ch in range(0x5f))
-        ZEN2HAN_dict[0x3000] = 0x0020
+        ZEN2HAN_dict = ZEN2HAN_DICT
 
         # ファイル名作成 デフォルトは [authors] title
         outdir = ''
@@ -396,6 +440,30 @@ class azw2zipConfig:
                     #
                     if not 'pass' in rename_info or not rename_info['pass']:
                         break
+
+        # 漫画など巻数が分かる場合はタイトルへ巻数を補完
+        if book_type == 'comic':
+            inferred_index = ''
+            if not series_index or series_index == '0':
+                inferred_index = self._extract_series_index(metadata)
+            else:
+                inferred_index = series_index
+
+            if inferred_index:
+                # series_indexが空の場合はここで更新
+                if not series_index or series_index == '0':
+                    series_index = inferred_index
+
+                if not self._title_contains_index(title, inferred_index):
+                    number_for_title = inferred_index
+                    if number_for_title.isdigit() and len(number_for_title) == 1:
+                        number_for_title = number_for_title.zfill(2)
+                    title = u"{0} 第{1}巻".format(title, number_for_title)
+                    title = sfn.safefilename(title, table=sfn.table2)
+
+                # 連番テンプレート向けにseriesも設定されていなければ補完
+                if not series:
+                    series = sfn.safefilename(org_title, table=sfn.table2)
 
         fname = rename_template.format(author=author, authors=authors, title=title, series=series, series_index=series_index, publisher=publisher, sub_title=sub_title, org_title = org_title)
 
