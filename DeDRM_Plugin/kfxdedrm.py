@@ -130,3 +130,125 @@ class KFXZipBook:
                 with zipfile.ZipFile(outpath, 'w') as zof:
                     for info in zif.infolist():
                         zof.writestr(info, self.decrypted.get(info.filename, zif.read(info.filename)))
+
+
+class KFXStandaloneBook:
+    def __init__(self, infile, voucherfile, skeyfile=None):
+        self.infile = infile
+        self.voucherfile = voucherfile
+        if skeyfile is not None:
+            self.skeylist = SKeyList(skeyfile)
+        else:
+            self.skeylist = None
+        self.voucher = None
+        self.decrypted = {}
+
+    def getPIDMetaInfo(self):
+        return (None, None)
+
+    def processBook(self, totalpids):
+        # Read DRMION file
+        with open(self.infile, 'rb') as fh:
+            data = fh.read(8)
+            if data != b'\xeaDRMION\xee':
+                print("Warning: File does not start with DRMION magic bytes")
+            data += fh.read()
+        
+        # Decrypt voucher first
+        if self.voucher is None:
+            self.decrypt_voucher(totalpids)
+        
+        print("Decrypting standalone KFX DRMION: {0}".format(os.path.basename(self.infile)))
+        outfile = BytesIO()
+        DrmIon(BytesIO(data[8:-8]), lambda name: self.voucher, self.skeylist).parse(outfile)
+        self.decrypted[os.path.basename(self.infile)] = outfile.getvalue()
+
+    def decrypt_voucher(self, totalpids):
+        # Read voucher file
+        with open(self.voucherfile, 'rb') as fh:
+            data = fh.read(4)
+            if data != b'\xe0\x01\x00\xea':
+                print("Warning: Voucher file does not start with expected magic bytes")
+            data += fh.read()
+        
+        if b'ProtectedData' not in data:
+            print("Warning: Voucher file does not contain ProtectedData")
+            self.voucher = None
+            return
+        
+        print("Decrypting KFX DRM voucher: {0}".format(os.path.basename(self.voucherfile)))
+        
+        for pid in [''] + totalpids:
+            if isinstance(pid, bytes):
+                pid = pid.decode('ascii')
+            
+            # KFXの場合、PIDの構造は:
+            # - DSN (16, 32, or 40 chars)
+            # - ACCOUNT_SECRET (0 or 40 chars)
+            # 可能な組み合わせを試す
+            for dsn_len, secret_len in [(0,0), (16,0), (16,40), (32,0), (32,40), (40,0), (40,40)]:
+                if len(pid) == dsn_len + secret_len:
+                    dsn = pid[:dsn_len]
+                    secret = pid[dsn_len:]
+                    break
+            else:
+                # 標準的な組み合わせに一致しない場合、PID全体をテスト
+                # 特に80文字のPID（32 DSN + 40 SECRET + 8 extra）の場合
+                if len(pid) >= 72:
+                    # 最初の32文字をDSN、次の40文字をSECRETとして試す
+                    dsn = pid[:32]
+                    secret = pid[32:72]
+                elif len(pid) >= 40:
+                    # 最初の部分をDSN、残りをSECRETとして試す
+                    dsn = pid[:32] if len(pid) >= 32 else pid
+                    secret = pid[32:72] if len(pid) >= 72 else pid[32:] if len(pid) > 32 else ''
+                else:
+                    dsn = pid
+                    secret = ''
+            
+            try:
+                voucher = DrmIonVoucher(BytesIO(data), dsn, secret, self.skeylist)
+                voucher.parse()
+                voucher.decryptvoucher()
+                print("Successfully decrypted voucher with DSN length={}, SECRET length={}".format(len(dsn), len(secret)))
+                break
+            except Exception as e:
+                # 詳細なエラー情報は最初の試行のみ表示
+                if pid == totalpids[0] if totalpids else '':
+                    import traceback
+                    traceback.print_exc()
+                pass
+        else:
+            print("Failed to decrypt KFX DRM voucher with any key")
+            raise Exception("Failed to decrypt voucher")
+        
+        print("KFX DRM voucher successfully decrypted")
+        
+        license_type = voucher.getlicensetype()
+        if license_type != "Purchase":
+            print("Warning: This book is licensed as {0}. These tools are intended for use on purchased books. Continuing ...".format(license_type))
+        
+        self.voucher = voucher
+
+    def getBookTitle(self):
+        return os.path.splitext(os.path.split(self.infile)[1])[0]
+
+    def getBookExtension(self):
+        return '.azw'
+
+    def getBookType(self):
+        return 'KFX'
+
+    def cleanup(self):
+        pass
+
+    def getFile(self, outpath):
+        if not self.decrypted:
+            shutil.copyfile(self.infile, outpath)
+        else:
+            # Write decrypted DRMION file
+            drmion_data = self.decrypted.get(os.path.basename(self.infile), b'')
+            with open(outpath, 'wb') as f:
+                f.write(b'\xeaDRMION\xee')
+                f.write(drmion_data)
+                f.write(b'\xe0\x01\x00\xea')

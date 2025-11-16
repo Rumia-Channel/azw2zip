@@ -147,15 +147,26 @@ def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime 
 
     mobi = True
     magic8 = open(infile,'rb').read(8)
-    if magic8 == b'\xeaDRMION\xee':
-        raise DrmException("The .kfx DRMION file cannot be decrypted by itself. A .kfx-zip archive containing a DRM voucher is required.")
-
     magic3 = magic8[:3]
-    if magic3 == b'TPZ':
-        mobi = False
-
-    if magic8[:4] == b'PK\x03\x04':
+    
+    if magic8 == b'\xeaDRMION\xee':
+        # 単体DRMIONファイルの場合、同じディレクトリの.voucherファイルを探す
+        indir = os.path.dirname(infile)
+        voucher_files = []
+        if os.path.isdir(indir):
+            import glob
+            voucher_files = glob.glob(os.path.join(indir, '*.voucher'))
+        
+        if voucher_files:
+            print("Found voucher file for standalone DRMION: {0}".format(voucher_files[0]))
+            mb = kfxdedrm.KFXStandaloneBook(infile, voucher_files[0], skeyfile)
+        else:
+            raise DrmException("The .kfx DRMION file cannot be decrypted by itself. A .kfx-zip archive or .voucher file is required.")
+    elif magic8[:4] == b'PK\x03\x04':
         mb = kfxdedrm.KFXZipBook(infile,skeyfile)
+    elif magic3 == b'TPZ':
+        mobi = False
+        mb = topazextract.TopazBook(infile)
     elif mobi:
         mb = mobidedrm.MobiBook(infile)
     else:

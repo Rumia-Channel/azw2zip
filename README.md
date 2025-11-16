@@ -19,13 +19,15 @@ python azw2zip.py -z "X:\My Kindle Content" "X:\Comic"
 ## Supported Formats
 * .azw (Kindle Format 8, Mobi)
 * .azw3 (Kindle Format 8)
-* .kfx (Kindle Format X)
+* .kfx (Kindle Format X - requires .voucher file in same directory)
 * .azw8 (Kindle Format X variant)
 * .azw9 (Kindle Format X variant)
 * .ion (Kindle Format X Ion format)
 * .kfx-zip (Kindle Format X - ZIP Archive)
 
-**注意**: ファイル形式はヘッダー（マジックバイト）で判別されるため、拡張子が異なっていても正しく処理されます。
+**注意**: 
+- ファイル形式はヘッダー（マジックバイト）で判別されるため、拡張子が異なっていても正しく処理されます
+- 単体の`.azw`ファイルが実際にはKFX DRMIONファイルの場合、同じディレクトリに`.voucher`ファイルが必要です
 
 ## Development environment
  * Kindle 2.1.0 70471
