@@ -25,9 +25,7 @@ def redirect_stdout(target):
     sys.stdout = original
 
 from compatibility_utils import add_cp65001_codec, unicode_argv
-from argv_utils import  set_utf8_default_encoding
 add_cp65001_codec()
-set_utf8_default_encoding()
 
 #import DumpAZW6_v01
 import DumpAZW6_py3
