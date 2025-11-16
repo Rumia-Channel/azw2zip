@@ -599,8 +599,8 @@ def main(argv=unicode_argv()):
                             result = kfx_extractor.extract_keys(kindle_docs, k4i_file=new_k4i_path)
                             print(u"  KFXKeyExtractor: キー抽出完了: {}".format(result['k4i_file']))
                             
-                            # Store output file path for use as skeyfile
-                            kfx_skey_file = result['output_file']
+                            # 抽出されたk4iファイルをskeyfileとして使用
+                            kfx_skey_file = result['k4i_file']
                             
                             # 新しいk4iで再度DRM解除を試行
                             print(u"  DRM解除: 再試行: {}".format(azw_fpath))
