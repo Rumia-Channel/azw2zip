@@ -59,6 +59,7 @@ def usage(progname):
     print(u"  -o        出力時に上書きをする(デフォルトは上書きしない)")
     print(u"  -d        デバッグモード(各ツールの標準出力表示＆作業ディレクトリ消さない)")
     print(u"  azw_indir 変換する書籍のディレクトリ(再帰的に読み込みます)")
+    print(u"            対応形式: .azw, .azw3, .kfx, .azw8, .azw9, .ion, .kfx-zip")
     print(u"  outdir    出力先ディレクトリ(省略時は{}と同じディレクトリ)".format(progname))
 
 def find_all_files(directory):
@@ -204,9 +205,12 @@ def main(argv=unicode_argv()):
         # ファイルでなければスキップ
         if not os.path.isfile(azw_fpath):
             continue
-        # .azwファイルでなければスキップ
+        # Kindleファイルでなければスキップ
+        fname = os.path.basename(azw_fpath)
         fext = os.path.splitext(azw_fpath)[1].upper()
-        if fext not in ['.AZW', '.AZW3']:
+        # KFX関連: .kfx, .azw8, .azw9, .ion, .kfx-zip
+        # Kindle Format 8: .azw, .azw3
+        if fext not in ['.AZW', '.AZW3', '.KFX', '.AZW8', '.AZW9', '.ION'] and not fname.upper().endswith('.KFX-ZIP'):
             continue
 
         output_zip = output_zip_org
@@ -281,9 +285,9 @@ def main(argv=unicode_argv()):
 
             print(u"  HD画像展開: 完了: {}".format(os.path.join(temp_dir, 'azw6_images')))
 
-        # azwならDRM解除
+        # Kindleファイル全般のDRM解除
         DeDRM_path = ""
-        if fext in ['.AZW']:
+        if fext in ['.AZW', '.KFX', '.AZW8', '.AZW9', '.ION'] or fname.upper().endswith('.KFX-ZIP'):
             print(u"  DRM解除: 開始: {}".format(azw_fpath))
 
             if debug_mode:
@@ -293,6 +297,15 @@ def main(argv=unicode_argv()):
                     decryptk4mobi(azw_fpath, temp_dir, k4i_dir)
 
             DeDRM_files = glob.glob(os.path.join(temp_dir, book_fname + '*.azw?'))
+            if not DeDRM_files:
+                # KFX関連ファイルの場合は様々なパターンを探す
+                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.kfx-zip'))
+                if not DeDRM_files:
+                    DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.kfx'))
+                if not DeDRM_files:
+                    DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw8'))
+                if not DeDRM_files:
+                    DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw9'))
             if len(DeDRM_files) > 0:
                 DeDRM_path = DeDRM_files[0]
                 print(u"  DRM解除: 完了: {}".format(DeDRM_path))

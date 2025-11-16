@@ -1,6 +1,6 @@
 # azw2zip
 
-KindleUnpackとDeDRM、DumpAZW6を改造してKindleの電子書籍(azw/azw3(あればresも))を画像のみの無圧縮zipかepubに変換するようにしたもの。  
+KindleUnpackとDeDRM、DumpAZW6を改造してKindleの電子書籍(azw/azw3/kfx-zip(あればresも))を画像のみの無圧縮zipかepubに変換するようにしたもの。  
 zipにした場合は画像ファイルのみが格納されます。(小説等テキストベースの書籍の場合は表紙と挿絵のみ)  
 azwはキーファイル(k4i)がなければ作り、変換します。
 Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要です。
@@ -12,9 +12,20 @@ Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要で�
 
 ## Usage
 ```bash
-python azw2zip.py -z X:\My Kindle Content X:\Comic
+python azw2zip.py -z "X:\My Kindle Content" "X:\Comic"
 ```
 詳しくはreadme.txtを参照。
+
+## Supported Formats
+* .azw (Kindle Format 8, Mobi)
+* .azw3 (Kindle Format 8)
+* .kfx (Kindle Format X)
+* .azw8 (Kindle Format X variant)
+* .azw9 (Kindle Format X variant)
+* .ion (Kindle Format X Ion format)
+* .kfx-zip (Kindle Format X - ZIP Archive)
+
+**注意**: ファイル形式はヘッダー（マジックバイト）で判別されるため、拡張子が異なっていても正しく処理されます。
 
 ## Development environment
  * Kindle 2.1.0 70471

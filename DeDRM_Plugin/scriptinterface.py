@@ -145,7 +145,7 @@ def decryptpdb(infile, outdir, rscpath):
     return rv
 
 
-def decryptk4mobi(infile, outdir, rscpath):
+def decryptk4mobi(infile, outdir, rscpath, skeyfile=None):
     errlog = ''
     rv = 1
     pidnums = []
@@ -195,7 +195,7 @@ def decryptk4mobi(infile, outdir, rscpath):
             dpath = os.path.join(rscpath,filename)
             androidFiles.append(dpath)
     try:
-        rv = k4mobidedrm.decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serialnums, pidnums)
+        rv = k4mobidedrm.decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serialnums, pidnums, skeyfile)
     except Exception as e:
         errlog += traceback.format_exc()
         errlog += str(e)

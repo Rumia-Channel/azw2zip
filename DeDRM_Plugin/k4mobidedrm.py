@@ -191,7 +191,7 @@ def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime 
 
 
 # kDatabaseFiles is a list of files created by kindlekey
-def decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serials, pids):
+def decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serials, pids, skeyfile=None):
     starttime = time.time()
     kDatabases = []
     for dbfile in kDatabaseFiles:
@@ -207,7 +207,7 @@ def decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serials, pids):
 
 
     try:
-        book = GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime)
+        book = GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime, skeyfile)
     except Exception as e:
         print("Error decrypting book after {1:.1f} seconds: {0}".format(e.args[0],time.time()-starttime))
         traceback.print_exc()
