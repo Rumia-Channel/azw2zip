@@ -95,9 +95,9 @@ import traceback
 
 #@@CALIBRE_COMPAT_CODE@@
 
-try: 
-    try: 
-        from . import __version
+try:
+    try:
+        import __version
     except:
         import __version
 except: 
@@ -137,9 +137,9 @@ try:
 except:
     config_dir = ""
 
-try: 
-    from . import utilities
-except: 
+try:
+    import utilities
+except:
     import utilities
 
 
@@ -162,7 +162,7 @@ class DeDRM(FileTypePlugin):
 
 
     def cli_main(self, data):
-        from .standalone import main
+        from standalone import main
         main(data)
     
     def initialize(self):

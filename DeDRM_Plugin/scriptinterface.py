@@ -9,7 +9,6 @@ import os
 
 #@@CALIBRE_COMPAT_CODE@@
 
-
 import re
 import traceback
 import ineptepub

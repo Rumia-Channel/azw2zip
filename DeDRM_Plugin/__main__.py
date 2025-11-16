@@ -31,7 +31,7 @@ try:
   import standalone.__init__ as mdata
   mn=mdata.main
 except:
-  from . import standalone
+  import standalone
   mdata=standalone.main
   mn=mdata
 import sys
