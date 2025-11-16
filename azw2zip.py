@@ -35,6 +35,17 @@ import unipath
 from azw2zip_config import azw2zipConfig
 from azw2zip_nodedrm import azw2zip
 from azw2zip_nodedrm import azw2zipException
+from kfx_key_extractor import KFXKeyExtractor, KFXKeyExtractorError
+
+# KFX image extraction
+try:
+    from kfxlib.yj_book import YJ_Book
+    from kfxlib.yj_to_image_book import KFX_IMAGE_BOOK
+    KFX_AVAILABLE = True
+except ImportError as e:
+    print(u"警告: kfxlibが利用できません。KFX画像抽出は無効です。")
+    print(u"  エラー: {}".format(str(e)))
+    KFX_AVAILABLE = False
 
 with redirect_stdout(open(os.devnull, 'w')):
     # AlfCrypto読み込み時の標準出力抑制
@@ -67,6 +78,205 @@ def find_all_files(directory):
         # yield root
         for file in files:
             yield os.path.join(root, file)
+
+def process_kfx_to_images(kfx_path, output_dir, output_zip, output_epub, compress_zip, debug_mode):
+    """
+    KFXファイル/ディレクトリから画像を抽出してZIP/EPUBを作成
+    """
+    if not KFX_AVAILABLE:
+        print(u"  KFX処理: kfxlibが利用できません")
+        return None
+    
+    try:
+        print(u"  KFX画像抽出: 開始: {}".format(kfx_path))
+        
+        # ディレクトリまたはファイルを判定
+        if os.path.isdir(kfx_path):
+            # ディレクトリの場合、KFX-ZIPを作成
+            print(u"  KFX処理: ディレクトリをKFX-ZIPに変換します: {}".format(kfx_path))
+            
+            # 一時KFX-ZIPファイルを作成
+            import zipfile
+            temp_kfx_zip = os.path.join(output_dir, os.path.basename(kfx_path) + '.kfx-zip')
+            base_name = os.path.basename(kfx_path)
+            
+            with zipfile.ZipFile(temp_kfx_zip, 'w', zipfile.ZIP_STORED) as zf:
+                for filename in os.listdir(kfx_path):
+                    if filename.endswith(('.azw', '.azw8', '.kfx', '.md', '.res')):
+                        file_path = os.path.join(kfx_path, filename)
+                        
+                        # _nodrm.azwファイルの場合、DRMIONヘッダーをスキップ
+                        if filename.endswith('_nodrm.azw') or filename.endswith('_nodrm.kfx') or filename.endswith('_nodrm.azw8'):
+                            with open(file_path, 'rb') as f:
+                                file_data = f.read()
+                                # DRMIONヘッダーをチェック
+                                if file_data[:8] == b'\xeaDRMION\xee':
+                                    # DRMIONヘッダー（8バイト）後のCONTコンテナを取得
+                                    file_data = file_data[8:]
+                                    if debug_mode:
+                                        print(u"    DRMIONヘッダー削除: {}".format(filename))
+                                # ZIPに書き込み
+                                zf.writestr(filename, file_data)
+                        else:
+                            zf.write(file_path, filename)
+                        
+                        if debug_mode:
+                            print(u"    追加: {}".format(filename))
+            
+            process_target = temp_kfx_zip
+            print(u"  KFX処理: KFX-ZIP作成完了: {}".format(temp_kfx_zip))
+            
+        elif os.path.isfile(kfx_path):
+            # ファイルの場合
+            parent_dir = os.path.dirname(kfx_path)
+            # 親ディレクトリに他のKFXファイルがあるかチェック
+            kfx_files = [f for f in os.listdir(parent_dir) if f.endswith(('.kfx', '.azw', '.azw8', '.ion', '.md', '.res'))]
+            if len(kfx_files) > 1:
+                # 複数のファイルがある場合、KFX-ZIPを作成
+                print(u"  KFX処理: ディレクトリ内の複数ファイルをKFX-ZIPに変換します")
+                import zipfile
+                temp_kfx_zip = os.path.join(output_dir, os.path.basename(parent_dir) + '.kfx-zip')
+                base_name = os.path.basename(parent_dir)
+                
+                with zipfile.ZipFile(temp_kfx_zip, 'w', zipfile.ZIP_STORED) as zf:
+                    for filename in kfx_files:
+                        file_path = os.path.join(parent_dir, filename)
+                        
+                        # _nodrm.azwファイルの場合、DRMIONヘッダーをスキップ
+                        if filename.endswith('_nodrm.azw') or filename.endswith('_nodrm.kfx') or filename.endswith('_nodrm.azw8'):
+                            with open(file_path, 'rb') as f:
+                                file_data = f.read()
+                                # DRMIONヘッダーをチェック
+                                if file_data[:8] == b'\xeaDRMION\xee':
+                                    # DRMIONヘッダー（8バイト）後のCONTコンテナを取得
+                                    file_data = file_data[8:]
+                                    if debug_mode:
+                                        print(u"    DRMIONヘッダー削除: {}".format(filename))
+                                # ZIPに書き込み
+                                zf.writestr(filename, file_data)
+                        else:
+                            zf.write(file_path, filename)
+                        
+                        if debug_mode:
+                            print(u"    追加: {}".format(filename))
+                
+                process_target = temp_kfx_zip
+                print(u"  KFX処理: KFX-ZIP作成完了: {}".format(temp_kfx_zip))
+            else:
+                # 単独ファイルの場合、.kfx拡張子にコピー
+                temp_kfx_file = kfx_path + '.kfx'
+                shutil.copy2(kfx_path, temp_kfx_file)
+                process_target = temp_kfx_file
+                base_name = os.path.splitext(os.path.basename(kfx_path))[0]
+                if base_name.endswith('_nodrm'):
+                    base_name = base_name[:-7]
+        else:
+            print(u"  KFX処理: パスが見つかりません: {}".format(kfx_path))
+            return None
+        
+        try:
+            # YJ_BookでKFX-ZIPを読み込み（DRM解除済みなので credentials=[]）
+            book = YJ_Book(process_target, credentials=[])
+            
+            output_files = []
+            
+            # 本をデコード
+            try:
+                book.decode_book()
+            except KeyError as e:
+                error_msg = str(e)
+                if "$260" in error_msg:
+                    print(u"  KFX画像抽出: テキストフラグメントなし（画像のみの本）")
+                    # $260エラーは無視して続行（画像のみの本）
+                else:
+                    print(u"  KFX画像抽出: デコード失敗: {}".format(error_msg))
+                    if debug_mode:
+                        import traceback
+                        traceback.print_exc()
+                    return None
+            except Exception as e:
+                print(u"  KFX画像抽出: デコード失敗: {}".format(str(e)))
+                if debug_mode:
+                    import traceback
+                    traceback.print_exc()
+                return None
+            
+            # 固定レイアウトかチェック
+            is_fixed_layout = False
+            if hasattr(book, 'page_order_images') and book.page_order_images:
+                is_fixed_layout = True
+            # $260フラグメントがない場合も固定レイアウト（画像のみ）
+            elif hasattr(book, 'fragments'):
+                count_260 = sum(1 for f in book.fragments if f.ftype == "$260")
+                if count_260 == 0:
+                    is_fixed_layout = True
+                    print(u"  KFX処理: テキストコンテンツなし、画像ベースとして処理します")
+            
+            # 固定レイアウトの場合、CBZを試みる
+            if output_zip and is_fixed_layout:
+                try:
+                    cbz_data = book.convert_to_cbz(
+                        split_landscape_comic_images=False,
+                        progress_fn=None
+                    )
+                    
+                    cbz_path = os.path.join(output_dir, base_name + '.cbz')
+                    with open(cbz_path, 'wb') as f:
+                        f.write(cbz_data)
+                    
+                    output_files.append(cbz_path)
+                    print(u"  KFX画像抽出: CBZ作成完了: {}".format(cbz_path))
+                except KeyError as e:
+                    error_msg = str(e)
+                    if "$260" in error_msg:
+                        print(u"  KFX画像抽出: CBZ作成スキップ（$260フラグメントエラー）")
+                    else:
+                        print(u"  KFX画像抽出: CBZ作成失敗: {}".format(error_msg))
+                        if debug_mode:
+                            import traceback
+                            traceback.print_exc()
+                except Exception as e:
+                    print(u"  KFX画像抽出: CBZ作成失敗: {}".format(str(e)))
+                    if debug_mode:
+                        import traceback
+                        traceback.print_exc()
+            
+            # リフロー型または固定レイアウトでない場合、EPUBを生成
+            if output_epub or (not is_fixed_layout and (output_zip or output_epub)):
+                try:
+                    print(u"  KFX変換: EPUB変換を開始します")
+                    epub_data = book.convert_to_epub(
+                        epub2_desired=False,
+                        force_cover=False,
+                        progress_fn=None
+                    )
+                    
+                    epub_path = os.path.join(output_dir, base_name + '.epub')
+                    with open(epub_path, 'wb') as f:
+                        f.write(epub_data)
+                    
+                    output_files.append(epub_path)
+                    print(u"  KFX変換: EPUB作成完了: {}".format(epub_path))
+                except Exception as e:
+                    print(u"  KFX変換: EPUB作成失敗: {}".format(str(e)))
+                    if debug_mode:
+                        import traceback
+                        traceback.print_exc()
+            
+            return output_files if output_files else None
+        finally:
+            # 一時ファイルを削除
+            if 'temp_kfx_file' in locals() and temp_kfx_file and os.path.exists(temp_kfx_file):
+                os.remove(temp_kfx_file)
+            if 'temp_kfx_zip' in locals() and temp_kfx_zip and os.path.exists(temp_kfx_zip):
+                os.remove(temp_kfx_zip)
+        
+    except Exception as e:
+        print(u"  KFX画像抽出: エラー: {}".format(str(e)))
+        if debug_mode:
+            import traceback
+            traceback.print_exc()
+        return None
 
 def main(argv=unicode_argv()):
     progname = os.path.splitext(os.path.basename(argv[0]))[0]
@@ -289,12 +499,58 @@ def main(argv=unicode_argv()):
         DeDRM_path = ""
         if fext in ['.AZW', '.KFX', '.AZW8', '.AZW9', '.ION'] or fname.upper().endswith('.KFX-ZIP'):
             print(u"  DRM解除: 開始: {}".format(azw_fpath))
+            
+            # Check for existing KFX keys file
+            kfx_keys_file = os.path.join(k4i_dir, 'kfx_keys.txt')
+            skeyfile = kfx_keys_file if os.path.exists(kfx_keys_file) else None
 
-            if debug_mode:
-                decryptk4mobi(azw_fpath, temp_dir, k4i_dir)
-            else:
-                with redirect_stdout(open(os.devnull, 'w')):
-                    decryptk4mobi(azw_fpath, temp_dir, k4i_dir)
+            # KFXファイルの場合、ディレクトリ内の関連ファイルもDRM解除
+            files_to_decrypt = [azw_fpath]
+            additional_files_to_copy = []
+            
+            # KFXフォーマットかチェック（拡張子ではなくmagicバイトで判定）
+            is_kfx_format = False
+            try:
+                with open(azw_fpath, 'rb') as f:
+                    magic = f.read(8)
+                    if magic == b'\xeaDRMION\xee' or magic[:4] == b'CONT':
+                        is_kfx_format = True
+            except Exception:
+                pass
+            
+            if is_kfx_format or fext in ['.KFX', '.AZW8', '.AZW9', '.ION'] or fname.upper().endswith('.KFX-ZIP'):
+                # .mdと.resファイルも処理（通常DRMなし、コピーのみ）
+                for ext in ['.md', '.res']:
+                    additional_files_to_copy.extend(glob.glob(os.path.join(azw_dir, '*' + ext)))
+            
+            for file_to_decrypt in files_to_decrypt:
+                if debug_mode:
+                    decryptk4mobi(file_to_decrypt, temp_dir, k4i_dir, skeyfile)
+                else:
+                    with redirect_stdout(open(os.devnull, 'w')):
+                        decryptk4mobi(file_to_decrypt, temp_dir, k4i_dir, skeyfile)
+            
+            # 追加ファイルをコピー（DRM解除を試み、失敗したら元ファイルをコピー）
+            for additional_file in additional_files_to_copy:
+                try:
+                    # DRM解除を試みる
+                    if debug_mode:
+                        decryptk4mobi(additional_file, temp_dir, k4i_dir, skeyfile)
+                    else:
+                        with redirect_stdout(open(os.devnull, 'w')):
+                            decryptk4mobi(additional_file, temp_dir, k4i_dir, skeyfile)
+                except Exception:
+                    pass
+                
+                # DRM解除されたファイルがなければ、元ファイルをコピー
+                basename = os.path.basename(additional_file)
+                decrypted_file = os.path.join(temp_dir, basename.replace('.md', '_nodrm.md').replace('.res', '_nodrm.res'))
+                if not os.path.exists(decrypted_file):
+                    # 元ファイルをコピー
+                    dst_file = os.path.join(temp_dir, basename)
+                    if not os.path.exists(dst_file):
+                        shutil.copy2(additional_file, dst_file)
+                        print(u"  KFX補助ファイルコピー: {}".format(basename))
 
             DeDRM_files = glob.glob(os.path.join(temp_dir, book_fname + '*.azw?'))
             if not DeDRM_files:
@@ -303,85 +559,210 @@ def main(argv=unicode_argv()):
                 if not DeDRM_files:
                     DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.kfx'))
                 if not DeDRM_files:
+                    DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw'))
+                if not DeDRM_files:
                     DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw8'))
                 if not DeDRM_files:
                     DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw9'))
+            
             if len(DeDRM_files) > 0:
                 DeDRM_path = DeDRM_files[0]
                 print(u"  DRM解除: 完了: {}".format(DeDRM_path))
             else:
                 print(u"  DRM解除: 失敗:")
+                # KFX形式の場合、KFXKeyExtractorで再試行
+                if is_kfx_format or fext in ['.KFX', '.AZW8', '.AZW9', '.ION'] or fname.upper().endswith('.KFX-ZIP'):
+                    print(u"  KFXKeyExtractor: キー抽出を試行中...")
+                    try:
+                        kfx_extractor = KFXKeyExtractor()
+                        # Kindleドキュメントパスを検出
+                        # ユーザーのDocumentsフォルダもチェック
+                        kindle_docs_paths = []
+                        local_appdata = os.environ.get('LOCALAPPDATA', '')
+                        if local_appdata:
+                            kindle_docs_paths.append(os.path.join(local_appdata, 'Amazon', 'Kindle', 'My Kindle Content'))
+                        
+                        # Documentsフォルダもチェック
+                        documents = os.path.join(os.path.expanduser('~'), 'Documents', 'My Kindle Content')
+                        if os.path.exists(documents):
+                            kindle_docs_paths.append(documents)
+                        
+                        kindle_docs = None
+                        for path in kindle_docs_paths:
+                            if os.path.exists(path):
+                                kindle_docs = path
+                                break
+                        
+                        if kindle_docs:
+                            # 新しいk4iファイルを作成
+                            new_k4i_path = os.path.join(k4i_dir, 'kfx_extracted.k4i')
+                            result = kfx_extractor.extract_keys(kindle_docs, k4i_file=new_k4i_path)
+                            print(u"  KFXKeyExtractor: キー抽出完了: {}".format(result['k4i_file']))
+                            
+                            # Store output file path for use as skeyfile
+                            kfx_skey_file = result['output_file']
+                            
+                            # 新しいk4iで再度DRM解除を試行
+                            print(u"  DRM解除: 再試行: {}".format(azw_fpath))
+                            if debug_mode:
+                                decryptk4mobi(azw_fpath, temp_dir, k4i_dir, kfx_skey_file)
+                            else:
+                                with redirect_stdout(open(os.devnull, 'w')):
+                                    decryptk4mobi(azw_fpath, temp_dir, k4i_dir, kfx_skey_file)
+                            
+                            # 再度DRMフリーファイルを検索
+                            DeDRM_files = glob.glob(os.path.join(temp_dir, book_fname + '*.azw?'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.kfx-zip'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.kfx'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw8'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw9'))
+                            
+                            if len(DeDRM_files) > 0:
+                                DeDRM_path = DeDRM_files[0]
+                                print(u"  DRM解除: 再試行成功: {}".format(DeDRM_path))
+                            else:
+                                print(u"  DRM解除: 再試行も失敗")
+                            
+                            # 一時ストレージフォルダをクリーンアップ
+                            kfx_extractor.cleanup_temp_storage()
+                        else:
+                            print(u"  KFXKeyExtractor: Kindleドキュメントが見つかりません")
+                    except KFXKeyExtractorError as e:
+                        print(u"  KFXKeyExtractor: エラー: {}".format(str(e)))
+                    except Exception as e:
+                        print(u"  KFXKeyExtractor: 予期しないエラー: {}".format(str(e)))
         elif fext in ['.AZW3']:
             DeDRM_path = azw_fpath
 
         if DeDRM_path and unipath.exists(DeDRM_path):
-            # 書籍変換
-            print(u"  書籍変換: 開始: {}".format(DeDRM_path))
-
-            #unpack_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(DeDRM_path))[0])
-            unpack_dir = temp_dir
-            if debug_mode:
-                kindleunpack.kindleunpack(DeDRM_path, unpack_dir, cfg)
+            # KFXファイルかチェック
+            is_kfx_file = False
+            with open(DeDRM_path, 'rb') as f:
+                magic = f.read(8)
+                if magic == b'\xeaDRMION\xee':
+                    is_kfx_file = True
+            
+            if is_kfx_file and KFX_AVAILABLE:
+                # KFXファイルの場合、ディレクトリ全体を画像抽出処理に渡す
+                # （KFX本は複数のファイルで構成されている）
+                print(u"  KFX画像抽出処理: 開始: {}".format(temp_dir))
+                
+                kfx_output_files = process_kfx_to_images(
+                    temp_dir,  # ディレクトリ全体を渡す
+                    out_dir, 
+                    output_zip, 
+                    output_epub, 
+                    compress_zip, 
+                    debug_mode
+                )
+                
+                if kfx_output_files:
+                    print(u"  KFX画像抽出処理: 完了")
+                    for output_file in kfx_output_files:
+                        print(u"    出力: {}".format(output_file))
+                else:
+                    print(u"  KFX画像抽出処理: 失敗")
             else:
-                with redirect_stdout(open(os.devnull, 'w')):
+                # DRM解除されたファイルがKFX形式かチェック
+                is_dedrm_kfx = False
+                try:
+                    with open(DeDRM_path, 'rb') as f:
+                        magic = f.read(8)
+                        if magic[:4] == b'CONT' or magic == b'\xeaDRMION\xee':
+                            is_dedrm_kfx = True
+                except Exception:
+                    pass
+                
+                if is_dedrm_kfx or DeDRM_path.endswith(('.kfx', '.kfx-zip', '.azw8', '.azw9')):
+                    # KFX形式の場合、KFX画像抽出処理
+                    print(u"  KFX画像抽出処理: 開始: {}".format(os.path.dirname(DeDRM_path)))
+                    kfx_output = process_kfx_to_images(
+                        os.path.dirname(DeDRM_path), 
+                        out_dir, 
+                        output_zip, 
+                        output_epub, 
+                        compress_zip, 
+                        debug_mode
+                    )
+                    
+                    if kfx_output:
+                        print(u"  KFX画像抽出処理: 成功")
+                    else:
+                        print(u"  KFX画像抽出処理: 失敗")
+                else:
+                    # 通常のKindle書籍変換
+                    print(u"  書籍変換: 開始: {}".format(DeDRM_path))
+
+                #unpack_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(DeDRM_path))[0])
+                unpack_dir = temp_dir
+                if debug_mode:
                     kindleunpack.kindleunpack(DeDRM_path, unpack_dir, cfg)
+                else:
+                    with redirect_stdout(open(os.devnull, 'w')):
+                        kindleunpack.kindleunpack(DeDRM_path, unpack_dir, cfg)
 
-            # 作成したファイル名を取得
-            fname_path = os.path.join(temp_dir, "fname.txt")
-            if unipath.exists(fname_path):
-                fname_file = codecs.open(fname_path, 'r', 'utf-8')
-                fname_txt = fname_file.readline().rstrip()
-                fname_file.close()
+                # 作成したファイル名を取得
+                fname_path = os.path.join(temp_dir, "fname.txt")
+                if unipath.exists(fname_path):
+                    fname_file = codecs.open(fname_path, 'r', 'utf-8')
+                    fname_txt = fname_file.readline().rstrip()
+                    fname_file.close()
 
-                for format in output_format:
-                    if format[0]:
-                        # まず一時ディレクトリ内でファイルを検索（再帰的）
-                        temp_output_fpath = os.path.join(temp_dir, "**", "*" + format[2])
-                        temp_files = glob.glob(temp_output_fpath, recursive=True)
-                        if debug_mode:
-                            print(u"  デバッグ: 検索パス: {}".format(temp_output_fpath))
-                            print(u"  デバッグ: 見つかったファイル: {}".format(temp_files))
-                            # 一時ディレクトリ内の全ファイルを表示
-                            print(u"  デバッグ: 一時ディレクトリ内容:")
-                            for root, dirs, files in os.walk(temp_dir):
-                                for file in files:
-                                    if file.endswith('.epub'):
-                                        full_path = os.path.join(root, file)
-                                        print(u"    EPUB発見: {}".format(full_path))
-                        if temp_files:
-                            # ファイルが見つかったら出力ディレクトリに移動
-                            final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                    for format in output_format:
+                        if format[0]:
+                            # まず一時ディレクトリ内でファイルを検索（再帰的）
+                            temp_output_fpath = os.path.join(temp_dir, "**", "*" + format[2])
+                            temp_files = glob.glob(temp_output_fpath, recursive=True)
                             if debug_mode:
-                                print(u"  デバッグ: {} -> {}".format(temp_files[0], final_output_fpath))
-                            shutil.move(temp_files[0], final_output_fpath)
-                            output_files = [final_output_fpath]
-                        else:
-                            # glob検索で見つからない場合、実際のEPUBファイルを直接移動
-                            if debug_mode:
-                                print(u"  デバッグ: glob検索失敗、直接EPUBファイルを探索")
-                            for root, dirs, files in os.walk(temp_dir):
-                                for file in files:
-                                    if file.endswith('.epub'):
-                                        source_path = os.path.join(root, file)
-                                        final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
-                                        if debug_mode:
-                                            print(u"  デバッグ: 直接移動: {} -> {}".format(source_path, final_output_fpath))
-                                        shutil.move(source_path, final_output_fpath)
-                                        output_files = [final_output_fpath]
+                                print(u"  デバッグ: 検索パス: {}".format(temp_output_fpath))
+                                print(u"  デバッグ: 見つかったファイル: {}".format(temp_files))
+                                # 一時ディレクトリ内の全ファイルを表示
+                                print(u"  デバッグ: 一時ディレクトリ内容:")
+                                for root, dirs, files in os.walk(temp_dir):
+                                    for file in files:
+                                        if file.endswith('.epub'):
+                                            full_path = os.path.join(root, file)
+                                            print(u"    EPUB発見: {}".format(full_path))
+                            if temp_files:
+                                # ファイルが見つかったら出力ディレクトリに移動
+                                final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                if debug_mode:
+                                    print(u"  デバッグ: {} -> {}".format(temp_files[0], final_output_fpath))
+                                shutil.move(temp_files[0], final_output_fpath)
+                                output_files = [final_output_fpath]
+                            else:
+                                # glob検索で見つからない場合、実際のEPUBファイルを直接移動
+                                if debug_mode:
+                                    print(u"  デバッグ: glob検索失敗、直接EPUBファイルを探索")
+                                for root, dirs, files in os.walk(temp_dir):
+                                    for file in files:
+                                        if file.endswith('.epub'):
+                                            source_path = os.path.join(root, file)
+                                            final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                            if debug_mode:
+                                                print(u"  デバッグ: 直接移動: {} -> {}".format(source_path, final_output_fpath))
+                                            shutil.move(source_path, final_output_fpath)
+                                            output_files = [final_output_fpath]
+                                            break
+                                    if output_files:
                                         break
-                                if output_files:
-                                    break
-                            if not output_files:
-                                # 出力ディレクトリ内も確認（既存の処理）
-                                output_fpath = os.path.join(out_dir, fname_txt + format[2])
-                                output_files = glob.glob(output_fpath.replace('[', '[[]'))
-                        if (len(output_files)):
-                            try:
-                                print(u"  {}変換: 完了: {}".format(format[1], output_files[0]))
-                            except UnicodeEncodeError:
-                                print(u"  {}変換: 完了: {}".format(format[1], output_files[0].encode('cp932', 'replace').decode('cp932')))
-            else:
-                print(u"  書籍変換: 失敗:")
+                                if not output_files:
+                                    # 出力ディレクトリ内も確認（既存の処理）
+                                    output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                    output_files = glob.glob(output_fpath.replace('[', '[[]'))
+                            if (len(output_files)):
+                                try:
+                                    print(u"  {}変換: 完了: {}".format(format[1], output_files[0]))
+                                except UnicodeEncodeError:
+                                    print(u"  {}変換: 完了: {}".format(format[1], output_files[0].encode('cp932', 'replace').decode('cp932')))
+                else:
+                    print(u"  書籍変換: 失敗:")
         else:
             print(u"  DRM解除: 失敗:")
 

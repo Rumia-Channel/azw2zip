@@ -329,6 +329,43 @@ def getPidList(md1, md2, serials=[], kDatabases=[]):
         except Exception as e:
             print("Error getting PIDs from database {0}: {1}".format(kDatabase[0],e.args[0]))
             traceback.print_exc()
+        
+        # Extract KFX-specific keys from k4i database for new-format KFX-ZIP and vouchers
+        try:
+            import json
+            import base64
+            db_data = kDatabase[1]  # kDatabase is [filepath, json_data]
+            
+            # Check for DSN (device serial number for voucher decryption)
+            dsn_hex = db_data.get('DSN', '')
+            dsn_clear = db_data.get('DSN_clear', '')
+            
+            # Check for new_secrets (from KFXKeyExtractor)
+            new_secrets = db_data.get('kindle.account.new_secrets', [])
+            if new_secrets and len(new_secrets) >= 2:
+                # new_secrets[0] is deviceId (hex string), new_secrets[1] is secret (base64)
+                device_id_hex = new_secrets[0]
+                secret_b64 = new_secrets[1]
+                
+                # For KFX voucher decryption: use DSN_clear (40-char Base62) + secret (as bytes)
+                if dsn_clear and secret_b64:
+                    try:
+                        secret_bytes = base64.b64decode(secret_b64)
+                        secret_hex = binascii.hexlify(secret_bytes).decode('ascii')
+                        
+                        # Create PID as: DSN (40 chars) + secret (hex-encoded)
+                        pid_voucher = dsn_clear + secret_hex
+                        pidlst.append(pid_voucher.encode('utf-8') if isinstance(pid_voucher, str) else pid_voucher)
+                        print(f"Added KFX voucher PID from k4i: DSN={dsn_clear[:8]}..., secret length={len(secret_hex)}")
+                    except Exception as e:
+                        print(f"Failed to process KFX voucher PID: {e}")
+                
+                # For KBDR (new-format KFX-ZIP): deviceId + base64Secret
+                pid_kbdr = device_id_hex + secret_b64
+                pidlst.append(pid_kbdr.encode('utf-8') if isinstance(pid_kbdr, str) else pid_kbdr)
+                print(f"Added KFX KBDR PID from k4i: deviceId={device_id_hex[:8]}...")
+        except Exception as e:
+            print(f"Note: Could not extract KFX keys from {kDatabase[0]}: {e}")
 
     for serialnum in serials:
         try:
