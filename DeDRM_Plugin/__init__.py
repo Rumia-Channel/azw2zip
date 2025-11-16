@@ -97,7 +97,7 @@ import traceback
 
 try: 
     try: 
-        import __version
+        from . import __version
     except:
         import __version
 except: 
@@ -138,7 +138,7 @@ except:
     config_dir = ""
 
 try: 
-    import utilities
+    from . import utilities
 except: 
     import utilities
 
@@ -162,7 +162,7 @@ class DeDRM(FileTypePlugin):
 
 
     def cli_main(self, data):
-        from standalone import main
+        from .standalone import main
         main(data)
     
     def initialize(self):

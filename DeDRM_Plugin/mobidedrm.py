@@ -85,9 +85,9 @@ import binascii
 #@@CALIBRE_COMPAT_CODE@@
 
 
-from alfcrypto import Pukall_Cipher
-from utilities import SafeUnbuffered
-from argv_utils import unicode_argv
+from .alfcrypto import Pukall_Cipher
+from .utilities import SafeUnbuffered
+from .argv_utils import unicode_argv
 
 
 class DrmException(Exception):
@@ -176,7 +176,7 @@ class MobiBook:
         pass
 
     def __init__(self, infile):
-        print("MobiDeDrm v{0:s}.\nCopyright (C) 2008-2022 The Dark Reverser, Apprentice Harper et al.".format(__version__))
+        print("MobiDeDrm v{0:s}.\nCopyright © 2008-2022 The Dark Reverser, Apprentice Harper et al.".format(__version__))
 
         # initial sanity check on file
         self.data_file = open(infile, 'rb').read()
@@ -471,7 +471,7 @@ def cli_main():
     argv=unicode_argv("mobidedrm.py")
     progname = os.path.basename(argv[0])
     if len(argv)<3 or len(argv)>4:
-        print("MobiDeDrm v{0:s}.\nCopyright (C) 2008-2020 The Dark Reverser, Apprentice Harper et al.".format(__version__))
+        print("MobiDeDrm v{0:s}.\nCopyright © 2008-2020 The Dark Reverser, Apprentice Harper et al.".format(__version__))
         print("Removes protection from Kindle/Mobipocket, Kindle/KF8 and Kindle/Print Replica ebooks")
         print("Usage:")
         print("    {0} <infile> <outfile> [<Comma separated list of PIDs to try>]".format(progname))
