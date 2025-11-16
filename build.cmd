@@ -2,7 +2,7 @@
 
 cd /d %~dp0
 
-rye sync
+uv sync
 
 mkdir build
 
@@ -11,4 +11,4 @@ xcopy "KindleUnpack\lib\*" "build\" /s /e /y
 
 copy /Y "*.py" "build\"
 
-rye run python -m nuitka --onefile --output-"dir=build\out" "build\azw2zip.py"
+uv run python -m nuitka --onefile --output-dir="build\out" "build\azw2zip.py"
