@@ -11,7 +11,7 @@ mkdir build
 
 echo Copying source files...
 xcopy "DeDRM_Plugin\*" "build\DeDRM_Plugin\" /s /e /i /y
-xcopy "KindleUnpack\lib\*" "build\KindleUnpack\lib\" /s /e /i /y
+xcopy "KindleUnpack\*" "build\KindleUnpack\" /s /e /i /y
 xcopy "kfxlib\*" "build\kfxlib\" /s /e /i /y
 xcopy "DeDRM_tools\*" "build\DeDRM_tools\" /s /e /i /y
 
@@ -19,6 +19,7 @@ copy /Y "*.py" "build\"
 
 echo Building standalone executable with Nuitka...
 cd build
+set PYTHONPATH=%CD%\KindleUnpack\lib;%CD%\DeDRM_Plugin
 uv run python -m nuitka ^
     --standalone ^
     --output-filename="azw2zip.exe" ^
@@ -27,9 +28,20 @@ uv run python -m nuitka ^
     --include-package=lxml ^
     --include-package=PIL ^
     --include-package=Crypto ^
+    --include-module=compatibility_utils ^
+    --include-module=unipath ^
+    --include-module=kindleunpack ^
+    --include-module=DumpAZW6_py3 ^
+    --include-module=kindlekey ^
+    --include-module=scriptinterface ^
+    --include-module=alfcrypto ^
+    --include-module=k4mobidedrm ^
+    --include-module=mobidedrm ^
+    --include-module=utilities ^
     --enable-plugin=pylint-warnings ^
     --assume-yes-for-downloads ^
     --windows-console-mode=attach ^
+    --include-data-dir="DeDRM_Plugin=DeDRM_Plugin" ^
     --follow-imports ^
     --nofollow-import-to=tkinter ^
     azw2zip.py

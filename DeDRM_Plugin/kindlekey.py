@@ -327,6 +327,13 @@ if iswindows:
             # Probably not the best. To Fix (shouldn't ignore in encoding) or use utf-8
             print("searching for kinfoFiles in " + path)
 
+            # look for (K4PC latest) .kinf2024 file
+            kinfopath = path +'\\Amazon\\Kindle\\storage\\.kinf2024'
+            if os.path.isfile(kinfopath):
+                found = True
+                print('Found K4PC latest kinf2024 file: ' + kinfopath)
+                kInfoFiles.append(kinfopath)
+
             # look for (K4PC 1.25.1 and later) .kinf2018 file
             kinfopath = path +'\\Amazon\\Kindle\\storage\\.kinf2018'
             if os.path.isfile(kinfopath):
