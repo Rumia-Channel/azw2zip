@@ -13,6 +13,7 @@ DUMP = False
 """ Set to True to dump all possible information. """
 
 import os
+import shutil
 
 import re
 # note: re requites the pattern to be the exact same type as the data to be searched in python3
@@ -184,7 +185,6 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
             unipath.mkdir(self.zipdir)
 
     def makeZip(self, fname, cover_offset, zip_compress = False):
-        import distutils.dir_util
         bname = os.path.normpath(os.path.join(self.outdir, '..', fname + '.zip'))
         if not unipath.exists(os.path.dirname(bname)):
             unipath.makedirs(os.path.dirname(bname))
@@ -193,9 +193,9 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
         self.outzip = zipfile.ZipFile(pathof(bname), 'w')
 
         if unipath.exists(self.k8images):
-            distutils.dir_util.copy_tree(self.k8images, self.zipdir)
+            shutil.copytree(self.k8images, self.zipdir, dirs_exist_ok=True)
         else:
-            distutils.dir_util.copy_tree(self.imgdir, self.zipdir)
+            shutil.copytree(self.imgdir, self.zipdir, dirs_exist_ok=True)
 
         # HDイメージ差し替え
         replaceHDimages(self.hdimgdir, self.zipdir, cover_offset)
@@ -208,7 +208,6 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
         self.outzip.close()
 
     def makeImages(self, fname, cover_offset):
-        import distutils.dir_util
         bname = os.path.normpath(os.path.join(self.outdir, '..', fname))
 
         if not unipath.exists(bname):
@@ -216,9 +215,9 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
 
         # ready to build images
         if unipath.exists(self.k8images):
-            distutils.dir_util.copy_tree(self.k8images, bname)
+            shutil.copytree(self.k8images, bname, dirs_exist_ok=True)
         else:
-            distutils.dir_util.copy_tree(self.imgdir, bname)
+            shutil.copytree(self.imgdir, bname, dirs_exist_ok=True)
 
         # HDイメージ差し替え
         replaceHDimages(self.hdimgdir, bname, cover_offset)
@@ -226,9 +225,8 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
 
 def replaceHDimages(src_dir, dest_dir, cover_offset):
     # HDイメージ差し替え
-    import distutils.dir_util
     if unipath.exists(src_dir):
-        distutils.dir_util.copy_tree(src_dir, dest_dir)
+        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
 
         # HDカバー画像をリネーム
         if cover_offset is not None:
