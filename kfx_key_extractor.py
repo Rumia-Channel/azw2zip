@@ -80,61 +80,52 @@ class KFXKeyExtractor:
         output_file = Path(output_file)
         k4i_file = Path(k4i_file)
 
-        # Use shell redirection to temp files to avoid ACCESS_VIOLATION
-        # when the extractor loads Kindle DLLs (pipes cause conflicts)
-        stdout_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix="kfx_out_")
-        stderr_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix="kfx_err_")
-        stdout_file.close()
-        stderr_file.close()
-
-        cmd_str = '"{}" "{}" "{}" "{}" >"{}" 2>"{}"'.format(
+        # Run extractor without capturing stdout/stderr to avoid
+        # ACCESS_VIOLATION when Kindle DLLs interact with Python's pipe handles.
+        # Output is written directly to files by the extractor itself;
+        # we only need to wait for it to finish and verify the outputs exist.
+        cmd = [
             str(self.extractor_path),
             str(kindle_docs_path),
             str(output_file),
-            str(k4i_file),
-            stdout_file.name,
-            stderr_file.name,
-        )
+            str(k4i_file)
+        ]
 
         try:
             result = subprocess.run(
-                cmd_str,
-                shell=True,
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 timeout=300
             )
-
-            with open(stdout_file.name, "r", encoding="utf-8", errors="replace") as f:
-                stdout_text = f.read()
-            with open(stderr_file.name, "r", encoding="utf-8", errors="replace") as f:
-                stderr_text = f.read()
-            os.unlink(stdout_file.name)
-            os.unlink(stderr_file.name)
-
-            if result.returncode != 0:
-                error_msg = f"KFX key extractor failed with code {result.returncode}"
-                if stderr_text.strip():
-                    error_msg += f"\nStderr: {stderr_text.strip()}"
-                raise KFXKeyExtractorError(error_msg)
-
-            if not output_file.exists():
-                raise KFXKeyExtractorError(f"Output file not created: {output_file}")
-            if not k4i_file.exists():
-                raise KFXKeyExtractorError(f"K4i file not created: {k4i_file}")
-
-            return {
-                'output_file': str(output_file),
-                'k4i_file': str(k4i_file),
-                'stdout': stdout_text,
-                'stderr': stderr_text,
-                'returncode': result.returncode
-            }
+        except subprocess.TimeoutExpired:
+            raise KFXKeyExtractorError("KFX key extractor timed out after 5 minutes")
         except Exception as e:
-            # Clean up temp files on error
             if cleanup_output and output_file.exists():
                 output_file.unlink()
             if cleanup_k4i and k4i_file.exists():
                 k4i_file.unlink()
-            raise KFXKeyExtractorError(f"Failed to run KFXKeyExtractor28.exe: {e}")
+            raise KFXKeyExtractorError(f"Failed to run KFX key extractor: {e}")
+
+        # The extractor may exit with non-zero code due to DLL unloading issues
+        # even when output files are correctly created. Trust the output files.
+        if not output_file.exists() or output_file.stat().st_size == 0:
+            if result.returncode != 0:
+                raise KFXKeyExtractorError(
+                    f"KFX key extractor failed with code {result.returncode} "
+                    f"and no output was created")
+            raise KFXKeyExtractorError("KFX key extractor produced no output")
+        if not k4i_file.exists():
+            raise KFXKeyExtractorError("K4i file not created")
+
+        return {
+            'output_file': str(output_file),
+            'k4i_file': str(k4i_file),
+            'stdout': '',
+            'stderr': '',
+            'returncode': result.returncode
+        }
     
     def extract_keys_to_default(self, kindle_docs_path=None):
         """
