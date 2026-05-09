@@ -80,26 +80,32 @@ class KFXKeyExtractor:
         output_file = Path(output_file)
         k4i_file = Path(k4i_file)
 
-        # Run extractor without capturing stdout/stderr to avoid
-        # ACCESS_VIOLATION when Kindle DLLs interact with Python's pipe handles.
-        # Output is written directly to files by the extractor itself;
-        # we only need to wait for it to finish and verify the outputs exist.
+        # The Nuitka-compiled exe cannot run subprocess for KFXKeyExtractor at all
+        # (ACCESS_VIOLATION on any pipe/handle inheritance). Use
+        # subprocess.CREATE_NO_WINDOW to prevent handle inheritance.
         cmd = [
             str(self.extractor_path),
             str(kindle_docs_path),
             str(output_file),
             str(k4i_file)
         ]
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
 
         try:
             result = subprocess.run(
                 cmd,
+                creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=300
             )
         except subprocess.TimeoutExpired:
+            if cleanup_output and output_file.exists():
+                output_file.unlink()
+            if cleanup_k4i and k4i_file.exists():
+                k4i_file.unlink()
             raise KFXKeyExtractorError("KFX key extractor timed out after 5 minutes")
         except Exception as e:
             if cleanup_output and output_file.exists():
@@ -108,8 +114,6 @@ class KFXKeyExtractor:
                 k4i_file.unlink()
             raise KFXKeyExtractorError(f"Failed to run KFX key extractor: {e}")
 
-        # The extractor may exit with non-zero code due to DLL unloading issues
-        # even when output files are correctly created. Trust the output files.
         if not output_file.exists() or output_file.stat().st_size == 0:
             if result.returncode != 0:
                 raise KFXKeyExtractorError(
