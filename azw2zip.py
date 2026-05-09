@@ -388,7 +388,7 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                         import traceback
                         traceback.print_exc()
             
-            return output_files if output_files else None
+            return {"output": output_files, "title": title if title else base_name, "authors": authors or []} if output_files else None
 
         finally:
             # 一時ファイルを削除
@@ -921,10 +921,11 @@ def main(argv=unicode_argv()):
                     print(u"  KFX画像抽出処理: 完了")
                     jsonl_result["status"] = "success"
                     jsonl_result["format"] = "epub"
-                    jsonl_result["output"] = kfx_output_files
-                    if kfx_output_files:
-                        jsonl_result["title"] = os.path.splitext(os.path.basename(kfx_output_files[0]))[0]
-                    for output_file in kfx_output_files:
+                    output_paths = kfx_output_files["output"]
+                    jsonl_result["output"] = output_paths
+                    jsonl_result["title"] = kfx_output_files.get("title", "")
+                    jsonl_result["authors"] = kfx_output_files.get("authors", [])
+                    for output_file in output_paths:
                         print(u"    出力: {}".format(output_file))
                 else:
                     print(u"  KFX画像抽出処理: 失敗")
@@ -968,9 +969,10 @@ def main(argv=unicode_argv()):
                         print(u"  KFX画像抽出処理: 成功")
                         jsonl_result["status"] = "success"
                         jsonl_result["format"] = "epub"
-                        jsonl_result["output"] = kfx_output
-                        if kfx_output:
-                            jsonl_result["title"] = os.path.splitext(os.path.basename(kfx_output[0]))[0]
+                        output_paths = kfx_output["output"]
+                        jsonl_result["output"] = output_paths
+                        jsonl_result["title"] = kfx_output.get("title", "")
+                        jsonl_result["authors"] = kfx_output.get("authors", [])
                     else:
                         print(u"  KFX画像抽出処理: 失敗")
                         jsonl_result["error"] = "KFX extraction failed"
