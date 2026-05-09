@@ -119,23 +119,27 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                     if filename.endswith(('.azw', '.azw8', '.kfx', '.md', '.res')):
                         file_path = os.path.join(kfx_path, filename)
                         
-                        # _nodrmファイルの場合、DRMIONヘッダーを削除して元のファイル名で格納
+                        # _nodrmファイルの場合、DRMIONヘッダー/トレーラを削除して元のファイル名で格納
                         if '_nodrm' in filename:
-                            # 元のファイル名を復元（_nodrm部分を削除）
                             original_filename = filename.replace('_nodrm', '')
                             
                             with open(file_path, 'rb') as f:
                                 file_data = f.read()
-                                # DRMIONヘッダーをチェック
                                 if file_data[:8] == b'\xeaDRMION\xee':
-                                    # DRMIONヘッダー（8バイト）後のCONTコンテナを取得
                                     file_data = file_data[8:]
+                                    if file_data[-4:] == b'\xe0\x01\x00\xea':
+                                        file_data = file_data[:-4]
                                     if debug_mode:
-                                        print(u"    DRMIONヘッダー削除: {} -> {}".format(filename, original_filename))
-                                # 元のファイル名でZIPに書き込み
+                                        print(u"    DRMIONヘッダー/トレーラ削除: {} -> {}".format(filename, original_filename))
                                 zf.writestr(original_filename, file_data)
                         else:
-                            # 通常のファイルはそのまま追加
+                            # DRMが残っているファイル（DRMIONヘッダー有）はスキップ
+                            with open(file_path, 'rb') as f:
+                                header = f.read(8)
+                            if header == b'\xeaDRMION\xee':
+                                if debug_mode:
+                                    print(u"    スキップ(DRMあり): {}".format(filename))
+                                continue
                             zf.write(file_path, filename)
                         
                         if debug_mode:
@@ -164,23 +168,27 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                     for filename in kfx_files:
                         file_path = os.path.join(parent_dir, filename)
                         
-                        # _nodrmファイルの場合、DRMIONヘッダーを削除して元のファイル名で格納
+                        # _nodrmファイルの場合、DRMIONヘッダー/トレーラを削除して元のファイル名で格納
                         if '_nodrm' in filename:
-                            # 元のファイル名を復元（_nodrm部分を削除）
                             original_filename = filename.replace('_nodrm', '')
                             
                             with open(file_path, 'rb') as f:
                                 file_data = f.read()
-                                # DRMIONヘッダーをチェック
                                 if file_data[:8] == b'\xeaDRMION\xee':
-                                    # DRMIONヘッダー（8バイト）後のCONTコンテナを取得
                                     file_data = file_data[8:]
+                                    if file_data[-4:] == b'\xe0\x01\x00\xea':
+                                        file_data = file_data[:-4]
                                     if debug_mode:
-                                        print(u"    DRMIONヘッダー削除: {} -> {}".format(filename, original_filename))
-                                # 元のファイル名でZIPに書き込み
+                                        print(u"    DRMIONヘッダー/トレーラ削除: {} -> {}".format(filename, original_filename))
                                 zf.writestr(original_filename, file_data)
                         else:
-                            # 通常のファイルはそのまま追加
+                            # DRMが残っているファイル（DRMIONヘッダー有）はスキップ
+                            with open(file_path, 'rb') as f:
+                                header = f.read(8)
+                            if header == b'\xeaDRMION\xee':
+                                if debug_mode:
+                                    print(u"    スキップ(DRMあり): {}".format(filename))
+                                continue
                             zf.write(file_path, filename)
                         
                         if debug_mode:
