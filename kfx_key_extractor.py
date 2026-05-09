@@ -89,17 +89,18 @@ class KFXKeyExtractor:
         ]
         
         try:
-            # Run extractor
+            # Run extractor (capture_output=False to avoid ACCESS_VIOLATION with Kindle DLLs)
             result = subprocess.run(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=300  # 5 minutes timeout
+                timeout=300
             )
             
             # Check for success
             if result.returncode != 0:
-                error_msg = f"KFXKeyExtractor28.exe failed with code {result.returncode}"
+                error_msg = f"KFX key extractor failed with code {result.returncode}"
                 if result.stderr:
                     error_msg += f"\nStderr: {result.stderr}"
                 raise KFXKeyExtractorError(error_msg)
