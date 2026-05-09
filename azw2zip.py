@@ -7,6 +7,7 @@ import sys, os
 import codecs
 import contextlib
 import glob
+import json
 import shutil
 import random
 import string
@@ -70,6 +71,7 @@ def usage(progname):
     print(u"  -o        出力時に上書きをする(デフォルトは上書きしない)")
     print(u"  -d        デバッグモード(各ツールの標準出力表示＆作業ディレクトリ消さない)")
     print(u"  -K        k4i/kfx_keysを再生成する(書籍が増減した場合に使用)")
+    print(u"  -j FILE   JSONL形式で変換結果をFILEに出力")
     print(u"  azw_indir 変換する書籍のディレクトリ(再帰的に読み込みます)")
     print(u"            対応形式: .azw, .azw3, .kfx, .azw8, .azw9, .ion, .kfx-zip")
     print(u"  outdir    出力先ディレクトリ(省略時は{}と同じディレクトリ)".format(progname))
@@ -387,6 +389,7 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                         traceback.print_exc()
             
             return output_files if output_files else None
+
         finally:
             # 一時ファイルを削除
             if 'temp_kfx_file' in locals() and temp_kfx_file and os.path.exists(temp_kfx_file):
@@ -409,7 +412,7 @@ def main(argv=unicode_argv()):
     print(u"")
 
     try:
-        opts, args = getopt.getopt(argv[1:], "zefptscomdK")
+        opts, args = getopt.getopt(argv[1:], "zefptscomdKj:")
     except getopt.GetoptError as err:
         print(str(err))
         usage(progname)
@@ -433,6 +436,7 @@ def main(argv=unicode_argv()):
     output_pdf = cfg.isOutputPdf()
     debug_mode = cfg.isDebugMode()
     regenerate_keys = False  # 鍵の再生成フラグ
+    jsonl_output = None  # JSONL出力ファイルパス
 
     # オプション解析
     for o, a in opts:
@@ -458,6 +462,8 @@ def main(argv=unicode_argv()):
             debug_mode = True
         if o == "-K":
             regenerate_keys = True
+        if o == "-j":
+            jsonl_output = a
     if not output_zip and not output_epub and not output_images and not output_pdf:
         output_zip = True
     cfg.setOptions(updated_title, authors_sort, compress_zip, over_write, output_thumb, debug_mode)
@@ -624,6 +630,17 @@ def main(argv=unicode_argv()):
         azw_dir = os.path.dirname(azw_fpath)
         print(u"変換開始: {}".format(azw_dir))
 
+        jsonl_result = {
+            "input": azw_fpath,
+            "status": "failure",
+            "title": "",
+            "authors": [],
+            "publisher": "",
+            "format": "",
+            "output": None,
+            "error": None,
+        }
+
         # 上書きチェック
         a2z = azw2zip()
         over_write_flag = over_write
@@ -638,6 +655,10 @@ def main(argv=unicode_argv()):
 
         if not over_write_flag:
             fname_txt = cfg.makeOutputFileName(a2z.get_meta_data())
+            meta = a2z.get_meta_data()
+            jsonl_result["title"] = meta.get("Title", [""])[0] or ""
+            jsonl_result["authors"] = meta.get("Creator", []) or []
+            jsonl_result["publisher"] = meta.get("Publisher", [""])[0] or "" if "Publisher" in meta else ""
             for format in output_format:
                 if format[0]:
                     output_fpath = os.path.join(out_dir, fname_txt + format[2])
@@ -652,8 +673,16 @@ def main(argv=unicode_argv()):
                         over_write_flag = True
 
         if not over_write_flag:
+            jsonl_result["status"] = "skipped"
+            jsonl_result["format"] = "all"
             # すべてパス
             print(u"変換完了: {}".format(azw_dir))
+            if jsonl_output:
+                try:
+                    with open(jsonl_output, "a", encoding="utf-8") as jf:
+                        jf.write(json.dumps(jsonl_result, ensure_ascii=False) + "\n")
+                except Exception as e:
+                    print(u"  JSONL出力エラー: {}".format(str(e)))
             continue
 
         cfg.setOutputFormats(output_zip, output_epub, output_images, output_pdf)
@@ -890,10 +919,16 @@ def main(argv=unicode_argv()):
                 
                 if kfx_output_files:
                     print(u"  KFX画像抽出処理: 完了")
+                    jsonl_result["status"] = "success"
+                    jsonl_result["format"] = "epub"
+                    jsonl_result["output"] = kfx_output_files
+                    if kfx_output_files:
+                        jsonl_result["title"] = os.path.splitext(os.path.basename(kfx_output_files[0]))[0]
                     for output_file in kfx_output_files:
                         print(u"    出力: {}".format(output_file))
                 else:
                     print(u"  KFX画像抽出処理: 失敗")
+                    jsonl_result["error"] = "KFX extraction failed"
             else:
                 # DRM解除されたファイルがKFX形式かチェック
                 is_dedrm_kfx = False
@@ -931,8 +966,14 @@ def main(argv=unicode_argv()):
                     
                     if kfx_output:
                         print(u"  KFX画像抽出処理: 成功")
+                        jsonl_result["status"] = "success"
+                        jsonl_result["format"] = "epub"
+                        jsonl_result["output"] = kfx_output
+                        if kfx_output:
+                            jsonl_result["title"] = os.path.splitext(os.path.basename(kfx_output[0]))[0]
                     else:
                         print(u"  KFX画像抽出処理: 失敗")
+                        jsonl_result["error"] = "KFX extraction failed"
                 else:
                     # 通常のKindle書籍変換
                     print(u"  書籍変換: 開始: {}".format(DeDRM_path))
@@ -999,16 +1040,31 @@ def main(argv=unicode_argv()):
                                     print(u"  {}変換: 完了: {}".format(format[1], output_files[0]))
                                 except UnicodeEncodeError:
                                     print(u"  {}変換: 完了: {}".format(format[1], output_files[0].encode('cp932', 'replace').decode('cp932')))
+                                jsonl_result["status"] = "success"
+                                jsonl_result["format"] = format[1]
+                                jsonl_result["output"] = output_files
+                                if not jsonl_result["title"] and output_files:
+                                    jsonl_result["title"] = os.path.splitext(os.path.basename(output_files[0]))[0]
                 else:
                     print(u"  書籍変換: 失敗:")
+                    jsonl_result["error"] = "Book conversion failed"
         else:
             print(u"  DRM解除: 失敗:")
+            jsonl_result["error"] = "DRM removal failed"
 
         if not debug_mode:
             shutil.rmtree(temp_dir)
             print(u" 作業ディレクトリ: 削除: {}".format(temp_dir))
 
         print(u"変換完了: {}".format(azw_dir))
+
+        if jsonl_output:
+            jsonl_result["input"] = azw_fpath
+            try:
+                with open(jsonl_output, "a", encoding="utf-8") as jf:
+                    jf.write(json.dumps(jsonl_result, ensure_ascii=False) + "\n")
+            except Exception as e:
+                print(u"  JSONL出力エラー: {}".format(str(e)))
 
     return 0
 
