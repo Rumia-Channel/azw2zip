@@ -66,6 +66,7 @@ __version__ = '6.0'
 import sys, os, re
 import csv
 import getopt
+import glob
 import re
 import traceback
 import time
@@ -140,23 +141,15 @@ def unescape(text):
         return text # leave as is
     return re.sub("&#?\\w+;", fixup, text)
 
-def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime = time.time(),skeyfile=None):
+def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime = time.time(),skeyfile=None, remove_watermarks=True):
     # handle the obvious cases at the beginning
     if not os.path.isfile(infile):
         raise DrmException("Input file does not exist.")
 
     mobi = True
     magic8 = open(infile,'rb').read(8)
-    magic3 = magic8[:3]
-    
     if magic8 == b'\xeaDRMION\xee':
-        # 単体DRMIONファイルの場合、同じディレクトリの.voucherファイルを探す
-        indir = os.path.dirname(infile)
-        voucher_files = []
-        if os.path.isdir(indir):
-            import glob
-            voucher_files = glob.glob(os.path.join(indir, '*.voucher'))
-        
+        voucher_files = glob.glob(os.path.join(os.path.dirname(infile), '*.voucher'))
         if voucher_files:
             print("Found voucher file for standalone DRMION: {0}".format(voucher_files[0]))
             mb = kfxdedrm.KFXStandaloneBook(infile, voucher_files[0], skeyfile)
@@ -164,13 +157,14 @@ def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime 
             raise DrmException("The .kfx DRMION file cannot be decrypted by itself. A .kfx-zip archive or .voucher file is required.")
     elif magic8[:4] == b'PK\x03\x04':
         mb = kfxdedrm.KFXZipBook(infile,skeyfile)
-    elif magic3 == b'TPZ':
-        mobi = False
-        mb = topazextract.TopazBook(infile)
-    elif mobi:
-        mb = mobidedrm.MobiBook(infile)
     else:
-        mb = topazextract.TopazBook(infile)
+        magic3 = magic8[:3]
+        if magic3 == b'TPZ':
+            mobi = False
+        if mobi:
+            mb = mobidedrm.MobiBook(infile, remove_watermarks)
+        else:
+            mb = topazextract.TopazBook(infile)
 
     try: 
         bookname = unescape(mb.getBookTitle())
@@ -218,7 +212,7 @@ def decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serials, pids, ske
 
 
     try:
-        book = GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime, skeyfile)
+        book = GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime, skeyfile=skeyfile)
     except Exception as e:
         print("Error decrypting book after {1:.1f} seconds: {0}".format(e.args[0],time.time()-starttime))
         traceback.print_exc()

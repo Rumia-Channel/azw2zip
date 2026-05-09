@@ -146,3 +146,9 @@ KindleUnpack_backup
 
 kfx_keys.txt
 kfx_test_out.txt
+
+# ccc / cocoindex-code
+.cocoindex_code/
+.cocoindex/
+
+/sample

@@ -1,0 +1,64 @@
+{
+  "default": [
+    {
+      "updated_title": 0,
+      "compress_zip": 0,
+      "over_write": 0,
+      "output_zip": 0,
+      "output_epub": 1,
+      "output_images": 0,
+      "output_pdf": 0,
+      "output_dir": "C:\\Users\\rumia\\Desktop\\Convert_Temp",
+      "debug_mode": 1,
+      "k4i_dir": "",
+      "authors_sep": " & ",
+      "authors_sort": 0,
+      "authors_others": "外{}名",
+      "authors_others_threshold": 5,
+      "output_thumb": 0,
+      "cover_fname": "cover{num1:0>5}.{ext}",
+      "image_fname": "image{num1:0>5}.{ext}",
+      "thumb_fname": "thumb{num1:0>5}.{ext}"
+    }
+  ],
+
+  "rename": [
+    {
+      "authors": ".+",
+      "title": ".+",
+      "ZENtoHAN": 1,
+      "pass": 1
+    },
+    {
+      "author": [ "(.+)\\s+(.+)", "\\1\\2" ],
+      "title": ".+",
+      "pass": 1
+    },
+    {
+      "authors": ".+",
+      "title": "(.+)\\s+\\(.+\\)$",
+      "pass": 1
+    },
+    {
+      "authors": "吾峠呼世晴",
+      "title": "(鬼滅の刃) (\\d{1,2})",
+      "series": "{title}",
+      "series_index": "鬼滅の刃 (\\d{1,2})",
+      "directory": "一般コミック\\[{authors}] {series}",
+      "template": "(一般コミック) [{authors}] {title} 第{series_index:0>2s}巻"
+    },
+    {
+      "authors": ".+",
+      "title": "(.+)\\s+\\[雑誌\\]",
+      "series": [ "(.+?)\\s+\\d{4}.+", "\\1", "{title}" ],
+      "directory": "{series}",
+      "template": "(雑誌) [{publisher}] {title}"
+    },
+    {
+      "authors": ".+",
+      "title": ".+",
+      "directory": "",
+      "template": "[{authors}] {title}"
+    }
+  ]
+}

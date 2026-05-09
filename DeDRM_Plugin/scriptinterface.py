@@ -9,6 +9,7 @@ import os
 
 #@@CALIBRE_COMPAT_CODE@@
 
+
 import re
 import traceback
 import ineptepub
@@ -195,7 +196,7 @@ def decryptk4mobi(infile, outdir, rscpath, skeyfile=None):
             dpath = os.path.join(rscpath,filename)
             androidFiles.append(dpath)
     try:
-        rv = k4mobidedrm.decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serialnums, pidnums, skeyfile)
+        rv = k4mobidedrm.decryptBook(infile, outdir, kDatabaseFiles, androidFiles, serialnums, pidnums, skeyfile=skeyfile)
     except Exception as e:
         errlog += traceback.format_exc()
         errlog += str(e)

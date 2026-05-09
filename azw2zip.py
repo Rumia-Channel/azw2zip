@@ -503,8 +503,11 @@ def main(argv=unicode_argv()):
                 print(u"KFXKeyExtractor28.exeを使用してKindleキー抽出を試行中...")
                 extractor = KFXKeyExtractor()
                 
-                # Use input directory as Kindle content directory
+                # KFXKeyExtractor28.exe は親の Kindle Content ディレクトリを必要とする
+                # in_dir が _EBOK サブディレクトリの場合、親ディレクトリを検出する
                 kindle_docs = in_dir
+                if os.path.basename(kindle_docs).upper().endswith('_EBOK'):
+                    kindle_docs = os.path.dirname(kindle_docs)
                 if not os.path.exists(kindle_docs):
                     # Fallback to default locations
                     kindle_docs = os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Amazon', 'Kindle', 'My Kindle Content')

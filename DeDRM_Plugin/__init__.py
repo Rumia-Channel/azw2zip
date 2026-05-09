@@ -95,9 +95,9 @@ import traceback
 
 #@@CALIBRE_COMPAT_CODE@@
 
-try:
-    try:
-        import __version
+try: 
+    try: 
+        from . import __version
     except:
         import __version
 except: 
@@ -137,9 +137,9 @@ try:
 except:
     config_dir = ""
 
-try:
-    import utilities
-except:
+try: 
+    from . import utilities
+except: 
     import utilities
 
 
@@ -149,7 +149,7 @@ PLUGIN_VERSION_TUPLE = __version.PLUGIN_VERSION_TUPLE
 
 class DeDRM(FileTypePlugin):
     name                    = PLUGIN_NAME
-    description             = "Removes DRM from Adobe Adept (including Kobo), Barnes & Noble, Amazon Kindle, Mobipocket and eReader ebooks. Credit given to i♥cabbages and The Dark Reverser for the original stand-alone scripts."
+    description             = "Removes DRM from Adobe ADEPT (including Rakuten Kobo), Barnes & Noble, Amazon Kindle, Mobipocket and eReader ebooks. Credit given to i♥cabbages and The Dark Reverser for the original stand-alone scripts."
     supported_platforms     = ['linux', 'osx', 'windows']
     author                  = "Apprentice Alf, Apprentice Harper, NoDRM, The Dark Reverser and i♥cabbages"
     version                 = PLUGIN_VERSION_TUPLE
@@ -162,7 +162,7 @@ class DeDRM(FileTypePlugin):
 
 
     def cli_main(self, data):
-        from standalone import main
+        from .standalone import main
         main(data)
     
     def initialize(self):
@@ -927,7 +927,7 @@ class DeDRM(FileTypePlugin):
         kindleDatabases = list(dedrmprefs['kindlekeys'].items())
 
         try:
-            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime,dedrmprefs["kindleextrakeyfile"])
+            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime,dedrmprefs["kindleextrakeyfile"], dedrmprefs["remove_watermarks"])
         except Exception as e:
             decoded = False
             # perhaps we need to get a new default Kindle for Mac/PC key
