@@ -20,22 +20,29 @@ class KFXKeyExtractorError(Exception):
 
 
 class KFXKeyExtractor:
-    """Wrapper for KFXKeyExtractor28.exe"""
-    
+    """Wrapper for KFXKeyExtractor28.exe / KFXKeyExtractor282.exe"""
+
+    EXTRACTOR_CANDIDATES = [
+        "KFXKeyExtractor282.exe",
+        "KFXKeyExtractor28.exe",
+    ]
+
     def __init__(self, extractor_path=None):
-        """
-        Initialize KFX key extractor
-        
-        Args:
-            extractor_path: Path to KFXKeyExtractor28.exe (default: DeDRM_tools/KFXKeyExtractor28.exe)
-        """
         if extractor_path is None:
             script_dir = Path(__file__).parent
-            extractor_path = script_dir / "DeDRM_tools" / "KFXKeyExtractor28.exe"
-        
+            for candidate in self.EXTRACTOR_CANDIDATES:
+                candidate_path = script_dir / "DeDRM_tools" / candidate
+                if candidate_path.exists():
+                    extractor_path = candidate_path
+                    break
+            else:
+                raise KFXKeyExtractorError(
+                    f"No KFX key extractor found in {script_dir / 'DeDRM_tools'}. "
+                    f"Tried: {', '.join(self.EXTRACTOR_CANDIDATES)}")
+
         self.extractor_path = Path(extractor_path)
         if not self.extractor_path.exists():
-            raise KFXKeyExtractorError(f"KFXKeyExtractor28.exe not found: {self.extractor_path}")
+            raise KFXKeyExtractorError(f"KFX key extractor not found: {self.extractor_path}")
     
     def extract_keys(self, kindle_docs_path, output_file=None, k4i_file=None):
         """

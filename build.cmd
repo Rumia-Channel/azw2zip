@@ -63,15 +63,22 @@ echo Copying DeDRM_tools to build output...
 xcopy "build\DeDRM_tools\*" "build\azw2zip.dist\DeDRM_tools\" /s /e /i /y
 echo.
 echo Verifying DeDRM_tools...
-if exist "build\azw2zip.dist\DeDRM_tools\KFXKeyExtractor28.exe" (
+if exist "build\azw2zip.dist\DeDRM_tools\KFXKeyExtractor282.exe" (
+    echo   [OK] KFXKeyExtractor282.exe found
+) else if exist "build\azw2zip.dist\DeDRM_tools\KFXKeyExtractor28.exe" (
     echo   [OK] KFXKeyExtractor28.exe found
 ) else (
-    echo   [WARN] KFXKeyExtractor28.exe missing!
+    echo   [WARN] KFXKeyExtractor28/282.exe missing!
 )
 if exist "build\azw2zip.dist\DeDRM_tools\KRFKeyExtractor.exe" (
     echo   [OK] KRFKeyExtractor.exe found
 ) else (
     echo   [WARN] KRFKeyExtractor.exe missing!
+)
+if exist "build\azw2zip.dist\DeDRM_tools\KFXArchiver291.exe" (
+    echo   [OK] KFXArchiver291.exe found
+) else (
+    echo   [INFO] KFXArchiver291.exe not found (optional)
 )
 echo.
 echo Renaming output folder ...
