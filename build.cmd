@@ -83,7 +83,8 @@ if exist "build\azw2zip.dist\DeDRM_tools\KFXArchiver291.exe" (
 echo.
 echo Renaming output folder ...
 if exist "build\azw2zip" rmdir /s /q "build\azw2zip"
-move "build\azw2zip.dist" "build\azw2zip"
+robocopy "build\azw2zip.dist" "build\azw2zip" /e /move /njh /njs /nfl /ndl
+if exist "build\azw2zip.dist" rmdir /s /q "build\azw2zip.dist"
 echo .
 echo Build process finished.
 echo.
