@@ -79,48 +79,55 @@ class KFXKeyExtractor:
         
         output_file = Path(output_file)
         k4i_file = Path(k4i_file)
-        
-        # Build command
-        cmd = [
+
+        # Use shell redirection to temp files to avoid ACCESS_VIOLATION
+        # when the extractor loads Kindle DLLs (pipes cause conflicts)
+        stdout_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix="kfx_out_")
+        stderr_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", prefix="kfx_err_")
+        stdout_file.close()
+        stderr_file.close()
+
+        cmd_str = '"{}" "{}" "{}" "{}" >"{}" 2>"{}"'.format(
             str(self.extractor_path),
             str(kindle_docs_path),
             str(output_file),
-            str(k4i_file)
-        ]
-        
+            str(k4i_file),
+            stdout_file.name,
+            stderr_file.name,
+        )
+
         try:
-            # Run extractor (capture_output=False to avoid ACCESS_VIOLATION with Kindle DLLs)
             result = subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
+                cmd_str,
+                shell=True,
                 timeout=300
             )
-            
-            # Check for success
+
+            with open(stdout_file.name, "r", encoding="utf-8", errors="replace") as f:
+                stdout_text = f.read()
+            with open(stderr_file.name, "r", encoding="utf-8", errors="replace") as f:
+                stderr_text = f.read()
+            os.unlink(stdout_file.name)
+            os.unlink(stderr_file.name)
+
             if result.returncode != 0:
                 error_msg = f"KFX key extractor failed with code {result.returncode}"
-                if result.stderr:
-                    error_msg += f"\nStderr: {result.stderr}"
+                if stderr_text.strip():
+                    error_msg += f"\nStderr: {stderr_text.strip()}"
                 raise KFXKeyExtractorError(error_msg)
-            
-            # Verify outputs exist
+
             if not output_file.exists():
                 raise KFXKeyExtractorError(f"Output file not created: {output_file}")
             if not k4i_file.exists():
                 raise KFXKeyExtractorError(f"K4i file not created: {k4i_file}")
-            
+
             return {
                 'output_file': str(output_file),
                 'k4i_file': str(k4i_file),
-                'stdout': result.stdout,
-                'stderr': result.stderr,
+                'stdout': stdout_text,
+                'stderr': stderr_text,
                 'returncode': result.returncode
             }
-        
-        except subprocess.TimeoutExpired:
-            raise KFXKeyExtractorError("KFXKeyExtractor28.exe timed out after 5 minutes")
         except Exception as e:
             # Clean up temp files on error
             if cleanup_output and output_file.exists():
