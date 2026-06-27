@@ -84,6 +84,7 @@ uv run python azw2zip.py -z -e "C:\Users\...\My Kindle Content" "C:\Output"
 - Kindle Unlimited漫画
 - 購入済みKFX書籍
 - 固定レイアウト（Fixed Layout）書籍
+- Microsoft Store版Kindle for Windows（MSIXKFXArchiver使用）
 
 ## Building Executable
 
@@ -115,6 +116,7 @@ build.cmd
 
 ## Development Environment
 * Kindle for PC 2.8.0 (70980)
+* Kindle for Windows (Microsoft Store版)
 * Python 3.12
 * Windows 10/11
 
@@ -127,11 +129,17 @@ build.cmd
    - `%LOCALAPPDATA%\Amazon\Kindle` または `Documents\My Kindle Content` からKindleドキュメントを検索
    - 抽出されたキーは `kfx_extracted.k4i` に保存されます
 
-2. **必要な環境**
+2. **Microsoft Store版Kindle for Windowsの場合**
+   - Microsoft Store版Kindleを検出すると、`DeDRM_tools\MSIXKFXArchiver*.exe` を使用して書籍を復号します
+   - コンテンツの保存場所: `%LOCALAPPDATA%\Packages\AMZNKindle.AmazonKindleReadingApp_*\LocalState\Classic\Content`
+   - `MSIXKFXArchiver*.exe` がない場合は `sample\DeDRM_bin\` からコピーするか、対応バージョンを別途入手してください
+   - MSIXKFXArchiverはKindleアプリのバージョンに依存するため、対応していないバージョンでは動作しません
+
+3. **必要な環境**
    - Kindle for PC 2.8.0 (70980) 推奨
    - 少なくとも1冊のKFX本がダウンロード済みであること
 
-3. **トラブルシューティング**
+4. **トラブルシューティング**
    - KFX変換が失敗する場合、デバッグモード（`-d`）で実行して詳細を確認
    - `kfx_extracted.k4i` が空の場合、無料本をいくつかダウンロードしてから再試行
 

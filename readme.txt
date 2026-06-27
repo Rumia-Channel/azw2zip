@@ -10,10 +10,17 @@ azwはキーファイル(k4i)がなければ作り、変換します。
 Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要です。
 
 ■開発環境
-・Kindle 2.0
+・Kindle 2.0 / Kindle for Windows (Microsoft Store版)
 ・Python 3.10.5
   ・Windows10
 で開発＆動作確認を行っています。
+
+■Microsoft Store版Kindle for Windowsについて
+Microsoft Store版のKindle for Windowsにも対応しています。
+初回実行時、azw2zipはMicrosoft Store版Kindleのインストールを検出すると、
+DeDRM_tools/MSIXKFXArchiver*.exeを使用して書籍を復号し、EPUB/ZIPに変換します。
+必要なバイナリ(DeDRM_tools/MSIXKFXArchiverMobi1_*.exe)がない場合は、
+sample/DeDRM_bin/からコピーするか、対応バージョンのものを別途入手してください。
 
 ■使用方法
 各々の環境にPython 3.10にpycryptodomeとlxmlを入れてazw2zip.pyに引数を渡して実行してください。
