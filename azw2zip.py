@@ -11,6 +11,7 @@ import json
 import shutil
 import random
 import string
+import tempfile
 
 __license__ = 'GPL v3'
 __version__ = u"0.3"
@@ -36,7 +37,7 @@ import unipath
 from azw2zip_config import azw2zipConfig
 from azw2zip_nodedrm import azw2zip
 from azw2zip_nodedrm import azw2zipException
-from kfx_key_extractor import KFXKeyExtractor, KFXKeyExtractorError
+from kfx_key_extractor import KFXKeyExtractor, KFXKeyExtractorError, MSIXKFXArchiver
 
 # KFX image extraction
 try:
@@ -200,16 +201,22 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                 process_target = temp_kfx_zip
                 print(u"  KFX処理: KFX-ZIP作成完了: {}".format(temp_kfx_zip))
             else:
-                # 単独ファイルの場合、.kfx拡張子にコピー
-                temp_kfx_file = kfx_path + '.kfx'
-                shutil.copy2(kfx_path, temp_kfx_file)
-                process_target = temp_kfx_file
+                # 単独ファイルの場合
                 if base_filename is None:
                     base_name = os.path.splitext(os.path.basename(kfx_path))[0]
                     if base_name.endswith('_nodrm'):
                         base_name = base_name[:-7]
                 else:
                     base_name = base_filename
+                
+                if kfx_path.lower().endswith('.kfx-zip'):
+                    # .kfx-zip はそのまま YJ_Book に渡す
+                    process_target = kfx_path
+                else:
+                    # その他の単独ファイルは .kfx 拡張子にコピー
+                    temp_kfx_file = kfx_path + '.kfx'
+                    shutil.copy2(kfx_path, temp_kfx_file)
+                    process_target = temp_kfx_file
         else:
             print(u"  KFX処理: パスが見つかりません: {}".format(kfx_path))
             return None
@@ -249,14 +256,14 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
                         traceback.print_exc()
                     return None
             
+            # メタデータ取得を試みる
+            title = None
+            authors = None
+            
             # base_filenameが指定されていない場合、メタデータから生成
             if base_filename is None:
                 try:
                     from safefilename import safefilename
-                    
-                    # メタデータ取得を試みる
-                    title = None
-                    authors = None
                     
                     # get_metadataメソッドを使用
                     if hasattr(book, 'get_metadata'):
@@ -404,6 +411,111 @@ def process_kfx_to_images(kfx_path, output_dir, base_filename, output_zip, outpu
             traceback.print_exc()
         return None
 
+def ensure_unique_base_name(base_name, out_dir, extensions, overwrite):
+    """
+    出力先に同名ファイル/ディレクトリが存在する場合、連番を付けてユニークな base_name を返す
+    
+    Args:
+        base_name: 元のファイル名（拡張子なし）
+        out_dir: 出力ディレクトリ
+        extensions: チェックする拡張子のリスト（ディレクトリは空文字 ''）
+        overwrite: 上書き設定。True の場合は連番を付けずに元の名前を返す
+    
+    Returns:
+        str: ユニークになった base_name
+    """
+    if overwrite:
+        return base_name
+    
+    candidate = base_name
+    counter = 1
+    max_attempts = 1000
+    
+    while counter <= max_attempts:
+        conflict = False
+        for ext in extensions:
+            if os.path.exists(os.path.join(out_dir, candidate + ext)):
+                conflict = True
+                break
+        if not conflict:
+            return candidate
+        candidate = u"{} ({})".format(base_name, counter)
+        counter += 1
+    
+    # 念のため上限に達したら元の名前を返す（通常は発生しない）
+    return base_name
+
+def get_kfx_metadata(kfx_path):
+    """
+    KFXファイル/ディレクトリからメタデータを取得する
+    
+    Args:
+        kfx_path: KFXファイル/ディレクトリのパス
+    
+    Returns:
+        dict: {'Title': [...], 'Creator': [...]} 形式のメタデータ、
+              取得できない場合は None
+    """
+    if not KFX_AVAILABLE:
+        return None
+    
+    try:
+        book = YJ_Book(kfx_path, credentials=[])
+        book.decode_book()
+        
+        title = None
+        authors = None
+        
+        if hasattr(book, 'get_metadata'):
+            metadata = book.get_metadata()
+            if isinstance(metadata, dict):
+                for title_key in ['title', 'Title', 'book_title', 'cde_content_type']:
+                    if title_key in metadata and metadata[title_key]:
+                        title_val = metadata[title_key]
+                        if isinstance(title_val, list):
+                            title = title_val[0]
+                        else:
+                            title = title_val
+                        break
+                for author_key in ['author', 'Author', 'authors', 'Authors', 'creator', 'Creator']:
+                    if author_key in metadata and metadata[author_key]:
+                        author_val = metadata[author_key]
+                        if isinstance(author_val, list):
+                            authors = [a for a in author_val if a]
+                        else:
+                            authors = [author_val]
+                        break
+        
+        if not title and hasattr(book, 'get_metadata_value'):
+            try:
+                title = book.get_metadata_value('title') or book.get_metadata_value('Title')
+            except:
+                pass
+        
+        if not authors and hasattr(book, 'get_metadata_value'):
+            try:
+                author_val = book.get_metadata_value('author') or book.get_metadata_value('Author')
+                if author_val:
+                    if isinstance(author_val, list):
+                        authors = author_val
+                    else:
+                        authors = [author_val]
+            except:
+                pass
+        
+        if not title and not authors:
+            return None
+        
+        result = {}
+        if title:
+            result['Title'] = [title]
+        if authors:
+            result['Creator'] = authors
+        return result
+    
+    except Exception as e:
+        return None
+
 def main(argv=unicode_argv()):
     progname = os.path.splitext(os.path.basename(argv[0]))[0]
     azw2zip_dir = os.path.dirname(os.path.abspath(argv[0]))
@@ -437,6 +549,8 @@ def main(argv=unicode_argv()):
     debug_mode = cfg.isDebugMode()
     regenerate_keys = False  # 鍵の再生成フラグ
     jsonl_output = None  # JSONL出力ファイルパス
+    msix_archived_kfx_dir = None  # MSStore版KindleのMSIXKFXArchiver出力ディレクトリ
+    msix_output_dir = None  # MSStore版KindleのMSIXKFXArchiver一時出力先
 
     # オプション解析
     for o, a in opts:
@@ -501,71 +615,142 @@ def main(argv=unicode_argv()):
             os.remove(kfx_keys_file)
             print(u"  削除: {}".format(kfx_keys_file))
     
-    if not len(k4i_files):
-        # k4iがなければ作成
+    # Microsoft Store 版 Kindle か判定
+    is_msstore_kindle = MSIXKFXArchiver.is_msstore_kindle_content(in_dir)
+    msix_kindle_docs = None
+    if not is_msstore_kindle:
+        # 入力が _EBOK サブディレクトリの場合、親が MSStore 版かもしれない
+        parent_dir = os.path.dirname(in_dir)
+        if os.path.basename(in_dir).upper().endswith('_EBOK') and MSIXKFXArchiver.is_msstore_kindle_content(parent_dir):
+            is_msstore_kindle = True
+
+    # 通常版 Kindle for PC のパスが指定された場合、MSStore 版がインストールされていればそちらを優先
+    if not is_msstore_kindle:
+        possible_legacy_paths = [
+            os.path.join(os.path.expanduser('~'), u'Documents', u'My Kindle Content'),
+            os.path.join(os.path.expandvars('%LOCALAPPDATA%'), u'Amazon', u'Kindle', u'My Kindle Content'),
+        ]
+        normalized_in_dir = os.path.normpath(in_dir).lower()
+        if any(normalized_in_dir == os.path.normpath(p).lower() for p in possible_legacy_paths):
+            msix_kindle_docs = MSIXKFXArchiver.find_msstore_kindle_content()
+            if msix_kindle_docs:
+                print(u"通常版Kindle for PCのパスが指定されました")
+                print(u"MSStore版Kindleが検出されたため、そちらを優先して使用します")
+                print(u"  MSStore版 Kindle Content: {}".format(msix_kindle_docs))
+                is_msstore_kindle = True
+
+    if not len(k4i_files) or is_msstore_kindle:
+        # k4iがなければ作成。MSStore版Kindleの場合は常にMSIXKFXArchiverを実行
         if not sys.platform.startswith('win') and not sys.platform.startswith('darwin'):
             # k4iはWindowsかMacでしか作成できない
             print(u"エラー : k4iファイルが見つかりません: {}".format(k4i_dir))
             sys.exit(1)
         
         print(u"k4i作成: 開始: {}".format(k4i_dir))
-        
-        # Try KFXKeyExtractor first for newer Kindle versions
-        kfx_success = False
-        if sys.platform.startswith('win'):
-            try:
-                print(u"KFXKeyExtractor28.exeを使用してKindleキー抽出を試行中...")
-                extractor = KFXKeyExtractor()
-                
-                # KFXKeyExtractor28.exe は親の Kindle Content ディレクトリを必要とする
-                # in_dir が _EBOK サブディレクトリの場合、親ディレクトリを検出する
-                kindle_docs = in_dir
-                if os.path.basename(kindle_docs).upper().endswith('_EBOK'):
-                    kindle_docs = os.path.dirname(kindle_docs)
-                if not os.path.exists(kindle_docs):
-                    # Fallback to default locations
-                    kindle_docs = os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Amazon', 'Kindle', 'My Kindle Content')
+
+        if is_msstore_kindle:
+            # Microsoft Store 版 Kindle: MSIXKFXArchiver を使用
+            kfx_success = False
+            if sys.platform.startswith('win'):
+                try:
+                    print(u"Microsoft Store版Kindleを検出しました")
+                    print(u"MSIXKFXArchiverを使用して書籍を復号します...")
+                    archiver = MSIXKFXArchiver()
+
+                    kindle_docs = msix_kindle_docs if msix_kindle_docs is not None else in_dir
+                    if os.path.basename(kindle_docs).upper().endswith('_EBOK'):
+                        kindle_docs = os.path.dirname(kindle_docs)
+
+                    print(u"  Kindle Content: {}".format(kindle_docs))
+
+                    # 一時ディレクトリ内に archived_kfx と oldbooks.k4i を生成
+                    msix_output_dir = tempfile.mkdtemp(prefix='azw2zip_msix_')
+                    msix_k4i_file = os.path.join(msix_output_dir, 'oldbooks.k4i')
+
+                    result = archiver.extract_keys(
+                        kindle_docs_path=kindle_docs,
+                        output_dir=msix_output_dir,
+                        k4i_file=msix_k4i_file
+                    )
+                    msix_archived_kfx_dir = os.path.join(result['output_dir'], 'archived_kfx')
+                    print(u"MSIXKFXArchiver実行成功")
+                    print(u"  出力ディレクトリ: {}".format(result['output_dir']))
+                    print(u"  archived_kfx: {}".format(msix_archived_kfx_dir))
+                    print(u"  k4i: {}".format(result['k4i_file']))
+                    kfx_success = True
+                except KFXKeyExtractorError as e:
+                    print(u"MSIXKFXArchiver使用失敗: {}".format(str(e)))
+                    print(u"従来の方法(KFXKeyExtractor)にフォールバック...")
+                except Exception as e:
+                    print(u"MSIXKFXArchiver実行エラー: {}".format(str(e)))
+                    import traceback
+                    traceback.print_exc()
+                    print(u"従来の方法(KFXKeyExtractor)にフォールバック...")
+            else:
+                print(u"エラー: Microsoft Store版KindleはWindowsでのみ対応しています")
+                sys.exit(1)
+
+            if not kfx_success:
+                is_msstore_kindle = False
+
+        if not is_msstore_kindle:
+            # Try KFXKeyExtractor first for newer Kindle versions
+            kfx_success = False
+            if sys.platform.startswith('win'):
+                try:
+                    print(u"KFXKeyExtractor28.exeを使用してKindleキー抽出を試行中...")
+                    extractor = KFXKeyExtractor()
+                    
+                    # KFXKeyExtractor28.exe は親の Kindle Content ディレクトリを必要とする
+                    # in_dir が _EBOK サブディレクトリの場合、親ディレクトリを検出する
+                    kindle_docs = in_dir
+                    if os.path.basename(kindle_docs).upper().endswith('_EBOK'):
+                        kindle_docs = os.path.dirname(kindle_docs)
                     if not os.path.exists(kindle_docs):
-                        kindle_docs = os.path.join(os.path.expanduser('~'), 'Documents', 'My Kindle Content')
+                        # Fallback to default locations
+                        kindle_docs = os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Amazon', 'Kindle', 'My Kindle Content')
                         if not os.path.exists(kindle_docs):
-                            raise KFXKeyExtractorError(u"Kindle Contentディレクトリが見つかりません")
-                
-                print(u"  Kindle Content: {}".format(kindle_docs))
-                
-                # Extract to k4i_dir
-                kfx_keys_file = os.path.join(k4i_dir, 'kfx_keys.txt')
-                k4i_file = os.path.join(k4i_dir, 'device.k4i')
-                
-                result = extractor.extract_keys(kindle_docs, kfx_keys_file, k4i_file)
-                print(u"KFXキー抽出成功")
-                print(u"  KFXキー: {}".format(result['output_file']))
-                print(u"  k4i: {}".format(result['k4i_file']))
-                kfx_success = True
-            except KFXKeyExtractorError as e:
-                print(u"KFXKeyExtractor使用失敗: {}".format(str(e)))
-                if "failed with code 3221225477" in str(e) or "failed with code -1073741819" in str(e):
-                    print(u"  注意: KFXKeyExtractor28.exeはKindle 2.8.0(70980)専用です")
-                    print(u"  現在インストールされているKindleのバージョンが異なる可能性があります")
-                print(u"従来の方法(kindlekey)にフォールバック...")
-            except Exception as e:
-                print(u"KFXKeyExtractor実行エラー: {}".format(str(e)))
-                print(u"従来の方法(kindlekey)にフォールバック...")
-        
-        # Fallback to old method if KFXKeyExtractor failed or not Windows
-        if not kfx_success:
-            try:
-                print(u"Kindleキー抽出を試行中(kindlekey)...")
-                kindlekey.getkey(k4i_dir)
-            except Exception as e:
-                print(u"エラー: k4iファイルの作成中にエラーが発生しました: {}".format(str(e)))
-                print(u"詳細エラー情報:")
-                import traceback
-                traceback.print_exc()
+                            kindle_docs = os.path.join(os.path.expanduser('~'), 'Documents', 'My Kindle Content')
+                            if not os.path.exists(kindle_docs):
+                                raise KFXKeyExtractorError(u"Kindle Contentディレクトリが見つかりません")
+                    
+                    print(u"  Kindle Content: {}".format(kindle_docs))
+                    
+                    # Extract to k4i_dir
+                    kfx_keys_file = os.path.join(k4i_dir, 'kfx_keys.txt')
+                    k4i_file = os.path.join(k4i_dir, 'device.k4i')
+                    
+                    result = extractor.extract_keys(kindle_docs, kfx_keys_file, k4i_file)
+                    print(u"KFXキー抽出成功")
+                    print(u"  KFXキー: {}".format(result['output_file']))
+                    print(u"  k4i: {}".format(result['k4i_file']))
+                    kfx_success = True
+                except KFXKeyExtractorError as e:
+                    print(u"KFXKeyExtractor使用失敗: {}".format(str(e)))
+                    if "failed with code 3221225477" in str(e) or "failed with code -1073741819" in str(e):
+                        print(u"  注意: KFXKeyExtractor28.exeはKindle 2.8.0(70980)専用です")
+                        print(u"  現在インストールされているKindleのバージョンが異なる可能性があります")
+                    print(u"従来の方法(kindlekey)にフォールバック...")
+                except Exception as e:
+                    print(u"KFXKeyExtractor実行エラー: {}".format(str(e)))
+                    print(u"従来の方法(kindlekey)にフォールバック...")
+            
+            # Fallback to old method if KFXKeyExtractor failed or not Windows
+            if not kfx_success:
+                try:
+                    print(u"Kindleキー抽出を試行中(kindlekey)...")
+                    kindlekey.getkey(k4i_dir)
+                except Exception as e:
+                    print(u"エラー: k4iファイルの作成中にエラーが発生しました: {}".format(str(e)))
+                    print(u"詳細エラー情報:")
+                    import traceback
+                    traceback.print_exc()
         
         # Check if k4i was created
         k4i_files = glob.glob(os.path.join(k4i_dir, '*.k4i'))
-        if len(k4i_files) > 0:
-            print(u"k4i作成: 完了: {}".format(k4i_files[0]))
+        if len(k4i_files) > 0 or (msix_archived_kfx_dir and os.path.isdir(msix_archived_kfx_dir)):
+            if len(k4i_files) > 0:
+                print(u"k4i作成: 完了: {}".format(k4i_files[0]))
         else:
             print(u"エラー: k4iファイルの作成に失敗しました")
             print(u"注意: k4iファイルの作成には以下が必要です:")
@@ -573,6 +758,7 @@ def main(argv=unicode_argv()):
             print(u"  - Kindleアプリでアカウントにログインしていること")
             print(u"  - Kindleアプリで書籍をダウンロードしたことがあること")
             print(u"  - 新しいKindle(1.26以降)の場合はKFXKeyExtractor28.exeが必要です")
+            print(u"  - Microsoft Store版Kindleの場合はMSIXKFXArchiver*.exeが必要です")
             print(u"")
             print(u"既存のk4iファイルがある場合は、{}ディレクトリに配置してください".format(k4i_dir))
             sys.exit(1)
@@ -600,6 +786,136 @@ def main(argv=unicode_argv()):
     output_epub_org = output_epub
     output_images_org = output_images
     output_pdf_org = output_pdf
+
+    # Microsoft Store 版 Kindle の場合、MSIXKFXArchiver が生成した archived_kfx 内の
+    # .kfx-zip を直接処理する
+    if msix_archived_kfx_dir and os.path.isdir(msix_archived_kfx_dir):
+        print(u"")
+        print(u"Microsoft Store版Kindle: archived_kfx 内の .kfx-zip を処理します")
+        print(u"  入力: {}".format(msix_archived_kfx_dir))
+
+        for kfx_zip_name in sorted(os.listdir(msix_archived_kfx_dir)):
+            if not kfx_zip_name.upper().endswith('.KFX-ZIP'):
+                continue
+
+            kfx_zip_path = os.path.join(msix_archived_kfx_dir, kfx_zip_name)
+            print(u"")
+            print(u"変換開始: {}".format(kfx_zip_path))
+
+            jsonl_result = {
+                "input": kfx_zip_path,
+                "status": "failure",
+                "title": "",
+                "authors": [],
+                "publisher": "",
+                "format": "",
+                "output": None,
+                "error": None,
+            }
+
+            # メタデータからファイル名を生成（通常のKindle書籍と同じ命名規則）
+            kfx_metadata = get_kfx_metadata(kfx_zip_path)
+            if kfx_metadata:
+                try:
+                    base_name = cfg.makeOutputFileName(kfx_metadata)
+                except Exception as e:
+                    if debug_mode:
+                        print(u"  デバッグ: メタデータからのファイル名生成失敗: {}".format(str(e)))
+                    base_name = os.path.splitext(kfx_zip_name)[0]
+                    if base_name.upper().endswith('_EBOK'):
+                        base_name = base_name[:-5]
+            else:
+                base_name = os.path.splitext(kfx_zip_name)[0]
+                if base_name.upper().endswith('_EBOK'):
+                    base_name = base_name[:-5]
+            
+            # 同名ファイルが存在する場合は連番を付ける（上書きOFF時）
+            base_name = ensure_unique_base_name(
+                base_name,
+                out_dir,
+                [u".zip", u".epub", u""],
+                over_write
+            )
+            
+            # 上書きチェック
+            over_write_flag = over_write
+            if not over_write_flag:
+                for format in [
+                    [output_zip_org, u"zip", u".zip"],
+                    [output_epub_org, u"epub", u".epub"],
+                    [output_images_org, u"Images", u""],
+                ]:
+                    if format[0]:
+                        output_fpath = os.path.join(out_dir, base_name + format[2])
+                        output_files = glob.glob(output_fpath.replace('[', '[[]'))
+                        if output_files:
+                            format[0] = False
+                            print(u" {}変換: パス: {}".format(format[1], output_files[0]))
+                        else:
+                            over_write_flag = True
+
+            if not over_write_flag:
+                jsonl_result["status"] = "skipped"
+                jsonl_result["format"] = "all"
+                print(u"変換完了: {}".format(kfx_zip_path))
+                if jsonl_output:
+                    try:
+                        with open(jsonl_output, "a", encoding="utf-8") as jf:
+                            jf.write(json.dumps(jsonl_result, ensure_ascii=False) + "\n")
+                    except Exception as e:
+                        print(u"  JSONL出力エラー: {}".format(str(e)))
+                continue
+
+            try:
+                kfx_output = process_kfx_to_images(
+                    kfx_zip_path,
+                    out_dir,
+                    base_name,
+                    output_zip_org,
+                    output_epub_org,
+                    compress_zip,
+                    debug_mode
+                )
+
+                if kfx_output:
+                    print(u"  KFX画像抽出処理: 成功")
+                    jsonl_result["status"] = "success"
+                    jsonl_result["format"] = "epub"
+                    output_paths = kfx_output["output"]
+                    jsonl_result["output"] = output_paths
+                    jsonl_result["title"] = kfx_output.get("title", "")
+                    jsonl_result["authors"] = kfx_output.get("authors", [])
+                    for output_file in output_paths:
+                        print(u"    出力: {}".format(output_file))
+                else:
+                    print(u"  KFX画像抽出処理: 失敗")
+                    jsonl_result["error"] = "KFX extraction failed"
+            except Exception as e:
+                print(u"  KFX画像抽出処理: エラー: {}".format(str(e)))
+                if debug_mode:
+                    import traceback
+                    traceback.print_exc()
+                jsonl_result["error"] = str(e)
+
+            print(u"変換完了: {}".format(kfx_zip_path))
+
+            if jsonl_output:
+                try:
+                    with open(jsonl_output, "a", encoding="utf-8") as jf:
+                        jf.write(json.dumps(jsonl_result, ensure_ascii=False) + "\n")
+                except Exception as e:
+                    print(u"  JSONL出力エラー: {}".format(str(e)))
+
+        # MSStore 版は通常のファイル走査ループでは処理しない
+        print(u"")
+        print(u"Microsoft Store版Kindleの処理を完了しました")
+
+        # 一時ディレクトリを削除（デバッグモード時は残す）
+        if not debug_mode and msix_output_dir and os.path.isdir(msix_output_dir):
+            shutil.rmtree(msix_output_dir)
+            print(u"  MSIX一時ディレクトリ: 削除: {}".format(msix_output_dir))
+
+        return 0
 
     # 処理ディレクトリのファイルを再帰走査
     for azw_fpath in find_all_files(in_dir):
