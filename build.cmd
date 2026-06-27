@@ -80,6 +80,18 @@ if exist "build\azw2zip.dist\DeDRM_tools\KFXArchiver291.exe" (
 ) else (
     echo   [INFO] KFXArchiver291.exe not found (optional)
 )
+set msix_found=0
+if exist "build\azw2zip.dist\DeDRM_tools\MSIXKFXArchiverMobi1_16118.exe" (
+    echo   [OK] MSIXKFXArchiverMobi1_16118.exe found
+    set msix_found=1
+)
+if exist "build\azw2zip.dist\DeDRM_tools\MSIXKFXArchiver1_16118.exe" (
+    echo   [OK] MSIXKFXArchiver1_16118.exe found
+    set msix_found=1
+)
+if %msix_found%==0 (
+    echo   [INFO] MSIXKFXArchiver*.exe not found (optional, required for MS Store Kindle)
+)
 echo.
 echo Renaming output folder ...
 if exist "build\azw2zip" rmdir /s /q "build\azw2zip"
