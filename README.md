@@ -12,7 +12,7 @@ KindleUnpack、DeDRM、DumpAZW6、kfxlibを統合し、Kindleの電子書籍（A
 ## Requirement
 
 ### 実行環境
-* Python 3.10以上
+* Python 3.10〜3.12
 * uv (Python package manager)
 
 ### 必要なパッケージ
@@ -21,6 +21,7 @@ KindleUnpack、DeDRM、DumpAZW6、kfxlibを統合し、Kindleの電子書籍（A
 * pypdf (KFX処理)
 * Pillow (画像処理)
 * beautifulsoup4 (HTML処理)
+* zstandard (KFXコンテナの展開)
 
 インストール:
 ```bash
@@ -45,6 +46,8 @@ uv run python azw2zip.py -z -e "C:\Users\...\My Kindle Content" "C:\Output"
 ### オプション
 
 ```
+azw2zip [-zefptscodKj] <azw_indir> [outdir]
+
 -z        ZIP形式で出力（画像のみ）
 -e        EPUB形式で出力
 -f        画像ファイルをディレクトリに出力
@@ -54,9 +57,22 @@ uv run python azw2zip.py -z -e "C:\Users\...\My Kindle Content" "C:\Output"
 -c        ZIP出力時に圧縮する
 -o        出力時に上書きする
 -d        デバッグモード（詳細出力＆作業ディレクトリを保持）
+-K        k4i / kfx_keys を再生成する（書籍が増減した場合に使用）
+-j FILE   変換結果をJSONL形式（1行1JSON）でFILEに追記出力
 ```
 
-詳しくはreadme.txtを参照。
+出力形式（`-z` / `-e` / `-f` / `-p`）を1つも指定しない場合は ZIP 出力がデフォルトになります。
+各オプションの既定値は `azw2zip.json` でも設定できます（後述）。詳しくは readme.txt を参照。
+
+### JSONL出力（`-j`）
+
+`-j result.jsonl` を付けると、書籍ごとに次の形式の1行JSONを追記します（バッチ処理の結果集計向け）。
+
+```json
+{"input": "...", "status": "success", "title": "...", "authors": ["..."], "publisher": "", "format": "epub", "output": ["...\\作品名.epub"], "error": null}
+```
+
+`status` は `success` / `skipped`（既存出力あり）/ `failure` のいずれかです。
 
 ## Supported Formats
 
@@ -89,10 +105,10 @@ uv run python azw2zip.py -z -e "C:\Users\...\My Kindle Content" "C:\Output"
 ## Building Executable
 
 ### ビルド環境
-* Python 3.10以上
+* Python 3.10〜3.12
 * uv
 * Visual Studio Build Tools または Windows SDK
-* Nuitka
+* Nuitka（`pyproject.toml` の依存として導入されます）
 
 ### ビルド手順
 
@@ -100,24 +116,31 @@ uv run python azw2zip.py -z -e "C:\Users\...\My Kindle Content" "C:\Output"
 build.cmd
 ```
 
-詳細は [BUILD.md](BUILD.md) を参照。
+`build.cmd` は `uv sync` で依存を同期したのち、Nuitka の standalone モードで `azw2zip.exe` を生成し、
+`DeDRM_Plugin` / `KindleUnpack` / `kfxlib` / `DeDRM_tools` を出力フォルダにコピーします。
+最後に出力フォルダ `build\azw2zip.dist` を `build\azw2zip` へリネームして完了します。
 
 ### 出力
 
-`build\azw2zip.dist\` ディレクトリに以下が生成されます:
+`build\azw2zip\` ディレクトリに以下が生成されます:
 - `azw2zip.exe` - メイン実行ファイル
 - `DeDRM_Plugin\` - DRM解除プラグイン
 - `KindleUnpack\` - Kindle展開ライブラリ
 - `kfxlib\` - KFX処理ライブラリ
-- `DeDRM_tools\` - KFXKeyExtractor28.exe等
-- `_internal\` - Pythonランタイム・依存ライブラリ
+- `DeDRM_tools\` - キー抽出・アーカイブ用の外部ツール（下記）
+- 依存ライブラリ・Pythonランタイム一式（Nuitka standalone）
 
-**重要**: `azw2zip.dist\` ディレクトリ全体が必要です（standalone形式）
+`DeDRM_tools\` に同梱される主なバイナリ:
+- `KFXKeyExtractor282.exe` / `KFXKeyExtractor28.exe` - Kindle for PC 2.8.x 用キー抽出（282を優先）
+- `MSIXKFXArchiverMobi1_16118.exe` - Microsoft Store版Kindle用のアーカイバ
+- `KFXArchiver291.exe` / `KRFKeyExtractor.exe` - 補助ツール（任意）
+
+**重要**: `build\azw2zip\` ディレクトリ全体が必要です（standalone形式）
 
 ## Development Environment
 * Kindle for PC 2.8.0 (70980)
 * Kindle for Windows (Microsoft Store版)
-* Python 3.12
+* Python 3.10〜3.12
 * Windows 10/11
 
 ## Note
@@ -125,9 +148,10 @@ build.cmd
 ### KFX処理に関する注意
 
 1. **初回実行時のキー抽出**
-   - KFX DRMが検出されると、KFXKeyExtractor28.exeが自動実行されます
+   - KFX DRMが検出されると、`KFXKeyExtractor282.exe`（無い場合は `28.exe`）が自動実行されます
    - `%LOCALAPPDATA%\Amazon\Kindle` または `Documents\My Kindle Content` からKindleドキュメントを検索
-   - 抽出されたキーは `kfx_extracted.k4i` に保存されます
+   - 抽出されたキーは `device.k4i` / `kfx_extracted.k4i` および `kfx_keys.txt` としてスクリプトと同じディレクトリに保存されます
+   - 既存のキーがある場合はそれを再利用します。書籍を追加・削除してキーを作り直したいときは `-K` を付けて実行してください
 
 2. **Microsoft Store版Kindle for Windowsの場合**
    - Microsoft Store版Kindleを検出すると、`DeDRM_tools\MSIXKFXArchiver*.exe` を使用して書籍を復号します
@@ -159,12 +183,19 @@ build.cmd
 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.ja.html)
 
 ## Author
+
+### 原作者
 * junk2ool
 * https://www.junk2ool.net/
 * https://github.com/junk2ool/azw2zip
 
+### このフォークについて
+本リポジトリは junk2ool 氏の azw2zip をベースに、KFX 対応・自動DRM解除（KFXKeyExtractor）・
+Microsoft Store版Kindle対応（MSIXKFXArchiver）・EPUB変換（kfxlib）・JSONL出力などを追加したフォークです。
+* https://github.com/Rumia-Channel/azw2zip
+
 ## References
-* DeDRM_tools v10.0.9 (RC1 for 10.1.0)  
+* DeDRM_tools (DeDRM_Plugin v10.0.20 同梱)  
 https://github.com/noDRM/DeDRM_tools
 のDeDRM_Plugin
 
