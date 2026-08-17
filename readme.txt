@@ -121,8 +121,8 @@ KindleUnpack - KindleUnpack/lib
 ・S-JISに存在しないUnicode文字の表示がWindows環境でエラーが出ないように対策。(mobi_header.py)
 
 ■使用したもの等
-DeDRM_tools 10.0.3
-https://github.com/noDRM/DeDRM_tools
+DeDRM_tools (Satsuoniフォーク, v10.0.29)
+https://github.com/Satsuoni/DeDRM_tools
 のDeDRM_Plugin
 
 DumpAZW6_py3.py
