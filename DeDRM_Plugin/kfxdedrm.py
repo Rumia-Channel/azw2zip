@@ -130,8 +130,6 @@ class KFXZipBook:
                 with zipfile.ZipFile(outpath, 'w') as zof:
                     for info in zif.infolist():
                         zof.writestr(info, self.decrypted.get(info.filename, zif.read(info.filename)))
-
-
 class KFXStandaloneBook:
     def __init__(self, infile, voucherfile, skeyfile=None):
         self.infile = infile

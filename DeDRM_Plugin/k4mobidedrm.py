@@ -155,16 +155,17 @@ def GetDecryptedBook(infile, kDatabases, androidFiles, serials, pids, starttime 
             mb = kfxdedrm.KFXStandaloneBook(infile, voucher_files[0], skeyfile)
         else:
             raise DrmException("The .kfx DRMION file cannot be decrypted by itself. A .kfx-zip archive or .voucher file is required.")
-    elif magic8[:4] == b'PK\x03\x04':
+
+    magic3 = magic8[:3]
+    if magic3 == b'TPZ':
+        mobi = False
+
+    if magic8[:4] == b'PK\x03\x04':
         mb = kfxdedrm.KFXZipBook(infile,skeyfile)
+    elif mobi:
+        mb = mobidedrm.MobiBook(infile, remove_watermarks)
     else:
-        magic3 = magic8[:3]
-        if magic3 == b'TPZ':
-            mobi = False
-        if mobi:
-            mb = mobidedrm.MobiBook(infile, remove_watermarks)
-        else:
-            mb = topazextract.TopazBook(infile)
+        mb = topazextract.TopazBook(infile)
 
     try: 
         bookname = unescape(mb.getBookTitle())

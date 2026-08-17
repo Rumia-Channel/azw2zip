@@ -790,7 +790,8 @@ onEnter (args) {
 this.sz=parseInt(args[0],16);
 },
 onLeave(retval) {
-allocations[str(retval)]=this.sz;
+if (this.sz<4000)
+  allocations[str(retval)]=this.sz;
 }
 });
 Interceptor.attach(freePtr, 
@@ -802,7 +803,7 @@ Interceptor.attach(freePtr,
     if (addr in allocations) {
         let p=new NativePointer(addr);
         let ln=allocations[addr];
-        if (ln>0 && ln<2000) 
+        if (ln>0 && ln<3000) 
        {
        let arr=p.readByteArray(ln);
        //console.log(hex(arr));
@@ -1174,10 +1175,29 @@ def tryPrintKey(drmkey):
         return
     if keyid!="" and secretkey is not None:
         print(f"{keyid}$secret_key:{secretkey.hex()}")
+def printPotentialKeyWithWarning(keyid,keyhex):
+  if keyhex.endswith("0000"):
+    print(f"Potentially false positive: {keyid}$secret_key:{keyhex}")
+  else:
+    print(f"{keyid}$secret_key:{keyhex}")
+prev_maybe_key=False
+prev_maybe_key_value=b""
 def on_message(payload, data):
+    global prev_maybe_key,prev_maybe_key_value
     if payload=="mem":
         #print(data.hex())
         #return
+        if prev_maybe_key and b"amzn1.drm-key" in data:
+          #print(prev_maybe_key_value.hex())
+          zr=data.find(b'\x00')
+          if zr != -1:
+            printPotentialKeyWithWarning(data[:zr].decode("utf8"),prev_maybe_key_value.hex())
+            #print(data[:zr].decode("utf8"))
+        if len(data)==16 :
+          prev_maybe_key=True
+          prev_maybe_key_value=data
+        else:
+          prev_maybe_key=False
         potkey = BinaryIonParser(BytesIO(data))
         addprottable(potkey)
         hn=False 
