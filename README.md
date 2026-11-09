@@ -87,6 +87,7 @@ azw2zip [-zefptscodKj] <azw_indir> [outdir]
 **注意**: 
 - ファイル形式はヘッダー（マジックバイト）で判別されるため、拡張子が異なっていても正しく処理されます
 - KFX形式の場合、初回実行時に自動的にキーが抽出されます（KFXKeyExtractor使用）
+- MOBI6（`.azw` / `.azw3`）も `-z` / `-e` / `-z -e` に対応します。EPUBは表紙を先頭に、残りを画像リソース順に並べた画像のみの書籍です。
 
 ## KFX対応
 
@@ -144,6 +145,16 @@ DeDRM（`kfx_stages` を含む）・KindleUnpack・kfxlib をコンパイルし�
 * Kindle for Windows (Microsoft Store版)
 * Python 3.10〜3.12
 * Windows 10/11
+
+### MOBI6 回帰テスト
+
+```cmd
+uv run python -m unittest -v test_mobi_conversion
+```
+
+合成MOBI6のDRM有無、ZIP／EPUB単独・同時出力、`.azw3`経由を確認します。
+子プロセスのUTF-8モードを無効にし、非デバッグ時も画像・表紙順・メタデータ・EPUBの参照先・JSONL成功結果を検証します。
+
 
 ## Note
 

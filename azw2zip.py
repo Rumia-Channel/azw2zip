@@ -49,7 +49,7 @@ except ImportError as e:
     print(u"  エラー: {}".format(str(e)))
     KFX_AVAILABLE = False
 
-with redirect_stdout(open(os.devnull, 'w')):
+with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
     # AlfCrypto読み込み時の標準出力抑制
     import kindlekey
     from scriptinterface import decryptepub, decryptpdb, decryptpdf, decryptk4mobi
@@ -1020,7 +1020,7 @@ def main(argv=unicode_argv()):
             if debug_mode:
                 DumpAZW6_py3.DumpAZW6(res_fpath, temp_dir)
             else:
-                with redirect_stdout(open(os.devnull, 'w')):
+                with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
                     DumpAZW6_py3.DumpAZW6(res_fpath, temp_dir)
 
             print(u"  HD画像展開: 完了: {}".format(os.path.join(temp_dir, 'azw6_images')))
@@ -1060,9 +1060,9 @@ def main(argv=unicode_argv()):
                     else:
                         # エラー出力も抑制
                         old_stderr = sys.stderr
-                        sys.stderr = open(os.devnull, 'w')
+                        sys.stderr = open(os.devnull, 'w', encoding='utf-8')
                         try:
-                            with redirect_stdout(open(os.devnull, 'w')):
+                            with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
                                 decryptk4mobi(file_to_decrypt, temp_dir, k4i_dir, skeyfile)
                         finally:
                             sys.stderr.close()
@@ -1085,9 +1085,9 @@ def main(argv=unicode_argv()):
                             decryptk4mobi(additional_file, temp_dir, k4i_dir, skeyfile)
                         else:
                             old_stderr = sys.stderr
-                            sys.stderr = open(os.devnull, 'w')
+                            sys.stderr = open(os.devnull, 'w', encoding='utf-8')
                             try:
-                                with redirect_stdout(open(os.devnull, 'w')):
+                                with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
                                     decryptk4mobi(additional_file, temp_dir, k4i_dir, skeyfile)
                             finally:
                                 sys.stderr.close()
@@ -1124,6 +1124,8 @@ def main(argv=unicode_argv()):
                     DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw8'))
                 if not DeDRM_files:
                     DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw9'))
+                if not DeDRM_files:
+                    DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.mobi'))
             
             if len(DeDRM_files) > 0:
                 DeDRM_path = DeDRM_files[0]
@@ -1167,7 +1169,7 @@ def main(argv=unicode_argv()):
                             if debug_mode:
                                 decryptk4mobi(azw_fpath, temp_dir, k4i_dir, kfx_skey_file)
                             else:
-                                with redirect_stdout(open(os.devnull, 'w')):
+                                with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
                                     decryptk4mobi(azw_fpath, temp_dir, k4i_dir, kfx_skey_file)
                             
                             # 再度DRMフリーファイルを検索
@@ -1182,6 +1184,8 @@ def main(argv=unicode_argv()):
                                 DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw8'))
                             if not DeDRM_files:
                                 DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.azw9'))
+                            if not DeDRM_files:
+                                DeDRM_files = glob.glob(os.path.join(temp_dir, '*_nodrm.mobi'))
                             
                             if len(DeDRM_files) > 0:
                                 DeDRM_path = DeDRM_files[0]
@@ -1301,7 +1305,7 @@ def main(argv=unicode_argv()):
                 if debug_mode:
                     kindleunpack.kindleunpack(DeDRM_path, unpack_dir, cfg)
                 else:
-                    with redirect_stdout(open(os.devnull, 'w')):
+                    with redirect_stdout(open(os.devnull, 'w', encoding='utf-8')):
                         kindleunpack.kindleunpack(DeDRM_path, unpack_dir, cfg)
 
                 # 作成したファイル名を取得
@@ -1334,25 +1338,9 @@ def main(argv=unicode_argv()):
                                 shutil.move(temp_files[0], final_output_fpath)
                                 output_files = [final_output_fpath]
                             else:
-                                # glob検索で見つからない場合、実際のEPUBファイルを直接移動
-                                if debug_mode:
-                                    print(u"  デバッグ: glob検索失敗、直接EPUBファイルを探索")
-                                for root, dirs, files in os.walk(temp_dir):
-                                    for file in files:
-                                        if file.endswith('.epub'):
-                                            source_path = os.path.join(root, file)
-                                            final_output_fpath = os.path.join(out_dir, fname_txt + format[2])
-                                            if debug_mode:
-                                                print(u"  デバッグ: 直接移動: {} -> {}".format(source_path, final_output_fpath))
-                                            shutil.move(source_path, final_output_fpath)
-                                            output_files = [final_output_fpath]
-                                            break
-                                    if output_files:
-                                        break
-                                if not output_files:
-                                    # 出力ディレクトリ内も確認（既存の処理）
-                                    output_fpath = os.path.join(out_dir, fname_txt + format[2])
-                                    output_files = glob.glob(output_fpath.replace('[', '[[]'))
+                                # ZIPなど、展開処理が出力先へ直接作成した同形式のファイルを確認
+                                output_fpath = os.path.join(out_dir, fname_txt + format[2])
+                                output_files = glob.glob(output_fpath.replace('[', '[[]'))
                             if (len(output_files)):
                                 try:
                                     print(u"  {}変換: 完了: {}".format(format[1], output_files[0]))

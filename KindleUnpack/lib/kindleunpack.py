@@ -704,7 +704,7 @@ def processMobi7(mh, metadata, sect, files, rscnames):
         guidetext = guidetext.decode(mh.codec)
 
     # create an OPF
-    opf = OPFProcessor(files, metadata, fileinfo, rscnames, ncx.isNCX, mh, usedmap, guidetext=guidetext)
+    opf = OPFProcessor(files, metadata.copy(), fileinfo, rscnames, ncx.isNCX, mh, usedmap, guidetext=guidetext)
     opf.writeOPF()
 
 
@@ -869,6 +869,8 @@ def process_all_mobi_headers(files, apnxfile, sect, mhlst, K8Boundary, k8only=Fa
         # Old Mobi (Mobi 7)
         elif not k8only:
             processMobi7(mh, metadata, sect, files, rscnames)
+            if K8Boundary < 0 and azw2zip_cfg is not None and azw2zip_cfg.isOutputEpub():
+                files.makeMobi7EPUB(metadata, rscnames)
 
         # process any remaining unknown sections of the palm file
         processUnknownSections(mh, sect, files, K8Boundary)
@@ -910,6 +912,8 @@ def unpackBook(infile, outdir, apnxfile=None, epubver='2', use_hd=False, dodump=
         apnxfile = unicode_str(apnxfile)
 
     files = fileNames(infile, outdir)
+    if azw2zip_cfg is not None:
+        files.makeZipStruct()
 
     # process the PalmDoc database header and verify it is a mobi
     sect = Sectionizer(infile)

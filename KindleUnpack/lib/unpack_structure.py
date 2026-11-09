@@ -21,6 +21,9 @@ import re
 
 import zipfile
 import binascii
+import mimetypes
+import uuid
+import xml.etree.ElementTree as ET
 from mobi_utils import mangle_fonts
 
 class unpackException(Exception):
@@ -174,6 +177,79 @@ xmlns:enc="http://www.w3.org/2001/04/xmlenc#" xmlns:deenc="http://ns.adobe.com/d
         self.zipUpDir(self.outzip,self.k8dir,'META-INF')
         self.zipUpDir(self.outzip,self.k8dir,'OEBPS')
         self.outzip.close()
+
+    def makeMobi7EPUB(self, metadata, rscnames):
+        cover_offset = int(metadata.get('CoverOffset', ['-1'])[0])
+        cover_name = rscnames[cover_offset] if 0 <= cover_offset < len(rscnames) else None
+        images = []
+        for name in rscnames:
+            if name is None:
+                continue
+            media = mimetypes.guess_type(name)[0]
+            if media and media.startswith('image/'):
+                image = (name, media)
+                if name == cover_name:
+                    images.insert(0, image)
+                else:
+                    images.append(image)
+        if not images:
+            raise unpackException('No images available for MOBI EPUB output')
+        self.makeK8Struct()
+        uid = 'urn:uuid:' + str(uuid.uuid4())
+        title = metadata['Title'][0]
+        language = metadata['Language'][0]
+
+        package = ET.Element('package', {
+            'xmlns': 'http://www.idpf.org/2007/opf', 'version': '2.0', 'unique-identifier': 'uid',
+        })
+        meta = ET.SubElement(package, 'metadata', {'xmlns:dc': 'http://purl.org/dc/elements/1.1/'})
+        ET.SubElement(meta, 'dc:identifier', {'id': 'uid'}).text = uid
+        ET.SubElement(meta, 'dc:title').text = title
+        ET.SubElement(meta, 'dc:language').text = language
+        for key, tag in [('Creator', 'creator'), ('Publisher', 'publisher'), ('Published', 'date')]:
+            for value in metadata.get(key, []):
+                ET.SubElement(meta, 'dc:' + tag).text = value
+        manifest = ET.SubElement(package, 'manifest')
+        ET.SubElement(manifest, 'item', {
+            'id': 'ncx', 'href': 'toc.ncx', 'media-type': 'application/x-dtbncx+xml',
+        })
+        spine = ET.SubElement(package, 'spine', {'toc': 'ncx'})
+
+        ncx = ET.Element('ncx', {'xmlns': 'http://www.daisy.org/z3986/2005/ncx/', 'version': '2005-1'})
+        head = ET.SubElement(ncx, 'head')
+        for name, content in [('dtb:uid', uid), ('dtb:depth', '1'), ('dtb:totalPageCount', '0'), ('dtb:maxPageNumber', '0')]:
+            ET.SubElement(head, 'meta', {'name': name, 'content': content})
+        ET.SubElement(ET.SubElement(ncx, 'docTitle'), 'text').text = title
+        nav_map = ET.SubElement(ncx, 'navMap')
+        usedmap = {}
+        for number, (name, media) in enumerate(images, 1):
+            page_id = 'page%05d' % number
+            image_id = 'image%05d' % number
+            page_href = 'Text/' + page_id + '.xhtml'
+            ET.SubElement(manifest, 'item', {
+                'id': image_id, 'href': 'Images/' + name, 'media-type': media,
+            })
+            ET.SubElement(manifest, 'item', {
+                'id': page_id, 'href': page_href, 'media-type': 'application/xhtml+xml',
+            })
+            ET.SubElement(spine, 'itemref', {'idref': page_id})
+            if name == cover_name:
+                ET.SubElement(meta, 'meta', {'name': 'cover', 'content': image_id})
+            point = ET.SubElement(nav_map, 'navPoint', {'id': page_id, 'playOrder': str(number)})
+            ET.SubElement(ET.SubElement(point, 'navLabel'), 'text').text = str(number)
+            ET.SubElement(point, 'content', {'src': page_href})
+
+            page = ET.Element('html', {'xmlns': 'http://www.w3.org/1999/xhtml', 'xml:lang': language})
+            page_head = ET.SubElement(page, 'head')
+            ET.SubElement(page_head, 'title').text = title
+            ET.SubElement(page_head, 'style', {'type': 'text/css'}).text = 'body { margin: 0; } img { max-width: 100%; height: auto; }'
+            ET.SubElement(ET.SubElement(page, 'body'), 'img', {'src': '../Images/' + name, 'alt': str(number)})
+            ET.ElementTree(page).write(pathof(os.path.join(self.k8text, page_id + '.xhtml')), encoding='utf-8', xml_declaration=True)
+            usedmap[name] = 'used'
+
+        ET.ElementTree(package).write(pathof(os.path.join(self.k8oebps, 'content.opf')), encoding='utf-8', xml_declaration=True)
+        ET.ElementTree(ncx).write(pathof(os.path.join(self.k8oebps, 'toc.ncx')), encoding='utf-8', xml_declaration=True)
+        self.makeEPUB(usedmap, {}, uid)
 
     def makeZipStruct(self):
         self.k8dir = os.path.join(self.outdir,'mobi8')

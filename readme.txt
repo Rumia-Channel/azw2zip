@@ -154,12 +154,20 @@ PrintReplica書籍で作品名・作者名が正常でないものはamazon.co.j
 GNU General Public License v3.0
 
 ■履歴
+2026/11/10
+・MOBI6復号後の.mobi出力を検出し、OPF生成時に作品名・作者のメタデータを保持。
+・MOBI6の画像EPUBを既存の梱包処理へ接続し、ZIP用作業領域の初期化を修正。
+・ZIP+EPUB同時指定時にEPUBをZIP名へ誤移動するフォールバックを削除。
+・非デバッグ時の破棄用出力をUTF-8に統一し、cp932環境でもDeDRMのUnicode出力で中断しないように修正。
+・test_mobi_conversion.pyで、DRM有無・出力形式・.azw3経由の7シナリオを検証。
+・再ビルドしたexeでも、非デバッグ・UTF-8モード無効の同じ7シナリオでZIP/EPUB生成と内容を確認。
+
 2026/11/09
 ・指定配布物のDeDRM_plugin.zip (v10.0.35) とcompiled_agent.jsを取り込み。
 ・MSIXKFXArchiver_x64_1_5634.exeとMSIXKFXArchiver1_23620_final.exeを追加し、自動選択・exe同梱を更新。
 ・DeDRM単体の合成MOBI復号（DRM有無両方）と上流KFXセルフテスト110件を確認。
 ・Python 3.12.6 / Nuitka 4.3.5でexeをビルドし、起動・合成MOBIの2型DRM復号を確認。
-・合成MOBI6の後段変換は、.mobi出力の検出漏れ／KindleUnpack内のTitle欠落という既存問題で未完了。今回の更新対象外。
+・合成MOBI6の後段変換は、.mobi出力の検出漏れ／KindleUnpack内のTitle欠落という既存問題で未完了（2026/11/10の修正で解消）。
 
 2023/02/05 v0.3改
 ・DeDRM_pluginのバージョンをアップし、2.x でも利用できるように
