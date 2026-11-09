@@ -19,8 +19,9 @@ Python 3.10にpycryptodomeとlxmlを入れたものが動く環境が必要で�
 Microsoft Store版のKindle for Windowsにも対応しています。
 初回実行時、azw2zipはMicrosoft Store版Kindleのインストールを検出すると、
 DeDRM_tools/MSIXKFXArchiver*.exeを使用して書籍を復号し、EPUB/ZIPに変換します。
-必要なバイナリ(DeDRM_tools/MSIXKFXArchiverMobi1_*.exe)がない場合は、
-sample/DeDRM_bin/からコピーするか、対応バージョンのものを別途入手してください。
+同梱のMSIXKFXArchiver_x64_1_5634.exeを最優先し、無ければMSIXKFXArchiver1_23620_final.exe、
+続いて旧版の順に、存在する最初のexeを使用します。Kindleアプリの版・アーキテクチャに合うexeが必要です。
+不足する場合は、対応版のDeDRM_tools配布物からDeDRM_tools/にコピーしてください。
 
 ■使用方法
 各々の環境にPython 3.10にpycryptodomeとlxmlを入れてazw2zip.pyに引数を渡して実行してください。
@@ -97,10 +98,9 @@ azw2zip_config.pyで実装してます。
 全般的にPython3への対応。
 
 DeDRM - DeDRM_Plugin
-・出力ファイル名を_nodrmを付けただけのものに変更。(k4mobidedrm.py)
-・©のprintがWindows環境ではエラーになるので(C)に変更。(mobidedrm.py)
-・python-lzmaを入れなくても大丈夫なように変更。(ion.py)
-・S-JISに存在しないUnicode文字の表示がWindows環境でエラーが出ないように対策。(k4mobidedrm.py)
+・v10.0.35配布物を取り込み、azw2zipからのskeyfile指定を維持。(scriptinterface.py / k4mobidedrm.py)
+・スタンドアロン実行用のimportを維持。(EPUB / PDF / PDB / Topazの補助モジュール)
+・現行PyCryptodomeで削除されたbchrをPython 3標準のbytesに置き換え。(ion.py)
 
 DumpAZW6
 ・下記の変更点をDumpAZW6_py3.py に移植し置き換え(DumpAZW6_py3.py)
@@ -121,7 +121,7 @@ KindleUnpack - KindleUnpack/lib
 ・S-JISに存在しないUnicode文字の表示がWindows環境でエラーが出ないように対策。(mobi_header.py)
 
 ■使用したもの等
-DeDRM_tools (Satsuoniフォーク, v10.0.29)
+DeDRM_tools (Satsuoniフォーク, 同梱プラグイン v10.0.35)
 https://github.com/Satsuoni/DeDRM_tools
 のDeDRM_Plugin
 
@@ -138,13 +138,9 @@ https://fgshun.hatenablog.com/entry/20100213/1266032982
 http://rio2016.5ch.net/test/read.cgi/ebooks/1526467330/395
 の>>395さんの修正も取り込んでいます。
 
-■py2exeでのexe化
-azw2zip/*.py
-azw2zip/DeDRM_Plugin/*.py (__init__.py除く)
-azw2zip/KindleUnpack/lib/*.py (__init__.py除く)
-上記の*.pyを同じディレクトリに入れる。
-python setup.py py2exe
-を実行する。
+■Nuitkaでのexe化
+uv、Python 3.10～3.12、Visual Studio Build Toolsを用意してbuild.cmdを実行します。
+出力先はbuild/azw2zip/です。DeDRM_toolsやPythonランタイムを含むディレクトリ全体が必要です。
 
 ■その他
 PrintReplica書籍で作品名・作者名が正常でないものはamazon.co.jpより取得します。
@@ -158,6 +154,13 @@ PrintReplica書籍で作品名・作者名が正常でないものはamazon.co.j
 GNU General Public License v3.0
 
 ■履歴
+2026/11/09
+・指定配布物のDeDRM_plugin.zip (v10.0.35) とcompiled_agent.jsを取り込み。
+・MSIXKFXArchiver_x64_1_5634.exeとMSIXKFXArchiver1_23620_final.exeを追加し、自動選択・exe同梱を更新。
+・DeDRM単体の合成MOBI復号（DRM有無両方）と上流KFXセルフテスト110件を確認。
+・Python 3.12.6 / Nuitka 4.3.5でexeをビルドし、起動・合成MOBIの2型DRM復号を確認。
+・合成MOBI6の後段変換は、.mobi出力の検出漏れ／KindleUnpack内のTitle欠落という既存問題で未完了。今回の更新対象外。
+
 2023/02/05 v0.3改
 ・DeDRM_pluginのバージョンをアップし、2.x でも利用できるように
 ・DumpAZW6_v01.py を DumpAZW6_py3.py に置き換え

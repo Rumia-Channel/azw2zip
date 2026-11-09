@@ -226,6 +226,8 @@ class MSIXKFXArchiver:
     """
 
     ARCHIVER_CANDIDATES = [
+        "MSIXKFXArchiver_x64_1_5634.exe",
+        "MSIXKFXArchiver1_23620_final.exe",
         "MSIXKFXArchiverMobi1_22326.exe",
         "MSIXKFXArchiver1_22326.exe",
         "MSIXKFXArchiverMobi1_18632.exe",

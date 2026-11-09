@@ -1,11 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#@@CALIBRE_COMPAT_CODE@@
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+if "calibre" in sys.modules:
+    # Explicitly set the package identifier so we are allowed to import stuff ...
+    __package__ = "calibre_plugins.dedrm"
+
+#@@CALIBRE_COMPAT_CODE_END@@
 
 import sys
 
 __license__ = 'GPL v3'
+
+RELATIONAL_CONTAINER_MAGIC = b'SQLite format 3\x00'
+
+
+def is_relational_container(path):
+    """Header only, never the body: dispatch can't use the extension, since a
+    fragment database arrives bare."""
+    try:
+        with open(path, 'rb') as header_file:
+            return header_file.read(len(RELATIONAL_CONTAINER_MAGIC)) == RELATIONAL_CONTAINER_MAGIC
+    except (IOError, OSError):
+        return False
 
 def uStrCmp (s1, s2, caseless=False):
     import unicodedata as ud

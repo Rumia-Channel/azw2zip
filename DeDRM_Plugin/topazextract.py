@@ -16,7 +16,27 @@ __version__ = '6.0'
 import sys
 import os, csv, getopt
 
-#@@CALIBRE_COMPAT_CODE@@
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+if "calibre" in sys.modules:
+    # Explicitly set the package identifier so we are allowed to import stuff ...
+    __package__ = "calibre_plugins.dedrm"
+
+#@@CALIBRE_COMPAT_CODE_END@@
 
 
 import zlib, zipfile, tempfile, shutil
@@ -24,11 +44,16 @@ import traceback
 from struct import pack
 from struct import unpack
 
-from alfcrypto import Topaz_Cipher
-from utilities import SafeUnbuffered
+try:
+  from .alfcrypto import Topaz_Cipher
+  from .utilities import SafeUnbuffered
 
-from argv_utils import unicode_argv
+  from .argv_utils import unicode_argv
+except: #python sure became weirder with time
+  from alfcrypto import Topaz_Cipher
+  from utilities import SafeUnbuffered
 
+  from argv_utils import unicode_argv
 
 #global switch
 debug = False

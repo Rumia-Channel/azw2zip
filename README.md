@@ -116,23 +116,24 @@ azw2zip [-zefptscodKj] <azw_indir> [outdir]
 build.cmd
 ```
 
-`build.cmd` は `uv sync` で依存を同期したのち、Nuitka の standalone モードで `azw2zip.exe` を生成し、
-`DeDRM_Plugin` / `KindleUnpack` / `kfxlib` / `DeDRM_tools` を出力フォルダにコピーします。
+`build.cmd` は `uv sync` で依存を同期したのち、Nuitka の standalone モードで `azw2zip.exe` を生成します。
+DeDRM（`kfx_stages` を含む）・KindleUnpack・kfxlib をコンパイルし、プラグインのデータと `DeDRM_tools` を同梱します。
 最後に出力フォルダ `build\azw2zip.dist` を `build\azw2zip` へリネームして完了します。
 
 ### 出力
 
 `build\azw2zip\` ディレクトリに以下が生成されます:
 - `azw2zip.exe` - メイン実行ファイル
-- `DeDRM_Plugin\` - DRM解除プラグイン
-- `KindleUnpack\` - Kindle展開ライブラリ
-- `kfxlib\` - KFX処理ライブラリ
+- `DeDRM_Plugin\` - DRM解除プラグインのデータ
+- DeDRM / `kfx_stages` / KindleUnpack / kfxlib のコンパイル済みコード
 - `DeDRM_tools\` - キー抽出・アーカイブ用の外部ツール（下記）
 - 依存ライブラリ・Pythonランタイム一式（Nuitka standalone）
 
 `DeDRM_tools\` に同梱される主なバイナリ:
 - `KFXKeyExtractor282.exe` / `KFXKeyExtractor28.exe` - Kindle for PC 2.8.x 用キー抽出（282を優先）
-- `MSIXKFXArchiverMobi1_22326.exe` - Microsoft Store版Kindle用のアーカイバ（Kindleアプリ1.0.22326まで対応）
+- `MSIXKFXArchiver_x64_1_5634.exe` - Microsoft Store版Kindle 1.1.5634（x64）用、既定で最優先
+- `MSIXKFXArchiver1_23620_final.exe` - Microsoft Store版Kindle 1.0.23620 用
+- `MSIXKFXArchiverMobi1_22326.exe` / `MSIXKFXArchiverMobi1_18632.exe` / `MSIXKFXArchiverMobi1_16118.exe` - 旧版Kindle用の既存アーカイバ
 - `kindleFridaDecrypt.py` / `kindledecr_arm64` / `kindledecr_x84_64` - Kindle for Android / eInk 用キー抽出
 - `KFXArchiver291.exe` / `KRFKeyExtractor.exe` - 補助ツール（任意）
 
@@ -157,8 +158,8 @@ build.cmd
 2. **Microsoft Store版Kindle for Windowsの場合**
    - Microsoft Store版Kindleを検出すると、`DeDRM_tools\MSIXKFXArchiver*.exe` を使用して書籍を復号します
    - コンテンツの保存場所: `%LOCALAPPDATA%\Packages\AMZNKindle.AmazonKindleReadingApp_*\LocalState\Classic\Content`
-   - `MSIXKFXArchiver*.exe` がない場合は `sample\DeDRM_bin\` からコピーするか、対応バージョンを別途入手してください
-   - MSIXKFXArchiverはKindleアプリのバージョンに依存するため、対応していないバージョンでは動作しません（同梱のMSIXKFXArchiverMobi1_22326.exeでKindleアプリ1.0.22326まで対応）
+   - `MSIXKFXArchiver*.exe` がない場合は、対応版のDeDRM_tools配布物から `DeDRM_tools\` にコピーしてください
+   - 同梱版は `MSIXKFXArchiver_x64_1_5634.exe` → `MSIXKFXArchiver1_23620_final.exe` → 旧版の順に、存在する最初のexeを使用します。Kindleアプリの版・アーキテクチャに合うexeが必要です
 
 3. **必要な環境**
    - Kindle for PC 2.8.0 (70980) 推奨
@@ -196,9 +197,11 @@ Microsoft Store版Kindle対応（MSIXKFXArchiver）・EPUB変換（kfxlib）・J
 * https://github.com/Rumia-Channel/azw2zip
 
 ## References
-* DeDRM_tools（Satsuoniフォーク、v10.0.29）
+* DeDRM_tools（Satsuoniフォーク、同梱プラグイン v10.0.35）
 https://github.com/Satsuoni/DeDRM_tools
 のDeDRM_Plugin（KRF系ツール: MSIXKFXArchiver / kindleFridaDecrypt 等を含む）
+取り込み元は指定配布物の `DeDRM_plugin.zip`（SHA-256: `e9954aa3f1903b5b9d79c459a71d4aee548a25a5d77b287b86aee698009a3569`）。
+azw2zip向けの変更は、既存の `skeyfile` 引数、スタンドアロン用import、現行PyCryptodome向けの `bytes` 処理に限定しています。
 
 * DumpAZW6_py3.py  
 https://gist.github.com/fireattack/99b7d9f6b2896cfa33944555d9e2a158

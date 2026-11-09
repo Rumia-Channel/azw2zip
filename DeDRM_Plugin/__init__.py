@@ -93,7 +93,27 @@ import sys, os
 import time
 import traceback
 
-#@@CALIBRE_COMPAT_CODE@@
+
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+if "calibre" in sys.modules:
+    # Explicitly set the package identifier so we are allowed to import stuff ...
+    __package__ = "calibre_plugins.dedrm"
+
+#@@CALIBRE_COMPAT_CODE_END@@
 
 try: 
     try: 
@@ -155,7 +175,7 @@ class DeDRM(FileTypePlugin):
     version                 = PLUGIN_VERSION_TUPLE
     #minimum_calibre_version = (5, 0, 0)  # Python 3.
     minimum_calibre_version = (2, 0, 0)  # Needs Calibre 1.0 minimum. 1.X untested.
-    file_types              = set(['epub','pdf','pdb','prc','mobi','pobi','azw','azw1','azw3','azw4','azw8','tpz','kfx','kfx-zip'])
+    file_types              = set(['epub','pdf','pdb','prc','mobi','pobi','azw','azw1','azw3','azw4','azw8','azw9','tpz','kfx','kfx-zip'])
     on_import               = True
     on_preprocess           = True
     priority                = 600
@@ -925,9 +945,14 @@ class DeDRM(FileTypePlugin):
         #print serials
         androidFiles = []
         kindleDatabases = list(dedrmprefs['kindlekeys'].items())
-
         try:
-            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime,dedrmprefs["kindleextrakeyfile"], dedrmprefs["remove_watermarks"])
+          opath=self.original_path_to_file
+          print("Original file path: {}".format(opath))
+        except:
+          print("Cannot get original path")
+          opath=None
+        try:
+            book = k4mobidedrm.GetDecryptedBook(path_to_ebook,kindleDatabases,androidFiles,serials,pids,self.starttime,dedrmprefs["kindleextrakeyfile"], dedrmprefs["remove_watermarks"],original_path=opath)
         except Exception as e:
             decoded = False
             # perhaps we need to get a new default Kindle for Mac/PC key
@@ -961,30 +986,47 @@ class DeDRM(FileTypePlugin):
                 if keyvalue not in dedrmprefs['kindlekeys'].values():
                     newkeys["key_{0:d}".format(i)] = keyvalue
 
-            if len(newkeys) > 0:
-                print("{0} v{1}: Found {2} new {3}".format(PLUGIN_NAME, PLUGIN_VERSION, len(newkeys), "key" if len(newkeys)==1 else "keys"))
+            if newkeys:
+                print("{0} v{1}: Recovered {2} new local Kindle {3}".format(
+                    PLUGIN_NAME, PLUGIN_VERSION, len(newkeys),
+                    "key" if len(newkeys) == 1 else "keys"))
+                # Authenticated local registration data can be saved even when the
+                # current ebook is unsupported or damaged; do not lose it on failure.
                 try:
-                    book = k4mobidedrm.GetDecryptedBook(path_to_ebook,newkeys.items(),[],[],[],self.starttime)
-                    decoded = True
-                    # store the new successful keys in the defaults
-                    print("{0} v{1}: Saving {2} new {3}".format(PLUGIN_NAME, PLUGIN_VERSION, len(newkeys), "key" if len(newkeys)==1 else "keys"))
                     i = 1
                     for keyvalue in newkeys.values():
                         while "kindle_key_{0:d}_{1:d}".format(int(time.time()), i) in dedrmprefs['kindlekeys']:
-                            i = i + 1
-                        dedrmprefs.addnamedvaluetoprefs('kindlekeys',"kindle_key_{0:d}_{1:d}".format(int(time.time()), i),keyvalue)
+                            i += 1
+                        dedrmprefs.addnamedvaluetoprefs(
+                            'kindlekeys',
+                            "kindle_key_{0:d}_{1:d}".format(int(time.time()), i),
+                            keyvalue)
                     dedrmprefs.writeprefs()
-                except Exception as e:
+                    print("{0} v{1}: Saved recovered local Kindle key(s)".format(
+                        PLUGIN_NAME, PLUGIN_VERSION))
+                except Exception:
+                    print("{0} v{1}: Could not save recovered Kindle keys".format(
+                        PLUGIN_NAME, PLUGIN_VERSION))
                     traceback.print_exc()
-                    pass
+
+                # Preserve the rest of the user's configured credentials on retry.
+                retry_keys = kindleDatabases + list(newkeys.items())
+                try:
+                    book = k4mobidedrm.GetDecryptedBook(
+                        path_to_ebook, retry_keys, androidFiles, serials, pids,
+                        self.starttime, dedrmprefs["kindleextrakeyfile"],
+                        dedrmprefs["remove_watermarks"], original_path=opath)
+                    decoded = True
+                except Exception:
+                    traceback.print_exc()
             if not decoded:
                 #if you reached here then no luck raise and exception
                 print("{0} v{1}: Ultimately failed to decrypt after {2:.1f} seconds. Read the FAQs at noDRM's repository: https://github.com/noDRM/DeDRM_tools/blob/master/FAQs.md".format(PLUGIN_NAME, PLUGIN_VERSION,time.time()-self.starttime))
                 raise DeDRMError("{0} v{1}: Ultimately failed to decrypt after {2:.1f} seconds. Read the FAQs at noDRM's repository: https://github.com/noDRM/DeDRM_tools/blob/master/FAQs.md".format(PLUGIN_NAME, PLUGIN_VERSION,time.time()-self.starttime))
 
         of = self.temporary_file(book.getBookExtension())
-        book.getFile(of.name)
         of.close()
+        book.getFile(of.name)
         book.cleanup()
         return of.name
 
@@ -1027,9 +1069,26 @@ class DeDRM(FileTypePlugin):
         self.starttime = time.time()
 
         booktype = os.path.splitext(path_to_ebook)[1].lower()[1:]
-        if booktype in ['prc','mobi','pobi','azw','azw1','azw3','azw4','tpz','kfx-zip']:
+        # no extension, so the shape comes from the file: an export leaves the
+        # fragment database bare, voucher beside it
+        relational_container = utilities.is_relational_container(path_to_ebook)
+        if booktype in ['prc','mobi','pobi','azw','azw1','azw3','azw4','azw8','azw9','tpz','kfx','kfx-zip'] or relational_container:
             # Kindle/Mobipocket
-            decrypted_ebook = self.KindleMobiDecrypt(path_to_ebook)
+            # kfx, azw8 and azw9 are in file_types, so a bare one must land here; left
+            # out, it hit "Unknown booktype" and came back unchanged. azw9 is the
+            # resource container beside the main one; the handler decides package vs
+            # DRMION/voucher
+            try:
+                decrypted_ebook = self.KindleMobiDecrypt(path_to_ebook)
+            except Exception as e:
+                if booktype not in ('kfx', 'azw8', 'azw9') and not relational_container:
+                    raise
+                # a bare container needn't be a shape this handler reads; back
+                # unchanged beats a failed import, since it already said why
+                print("{0} v{1}: The KFX handler could not decrypt this {2} file ({3}). "
+                      "Passing it back to calibre unchanged.".format(
+                          PLUGIN_NAME, PLUGIN_VERSION, booktype, e))
+                return path_to_ebook
         elif booktype == 'pdb':
             # eReader
             decrypted_ebook = self.eReaderDecrypt(path_to_ebook)
@@ -1052,7 +1111,10 @@ class DeDRM(FileTypePlugin):
         return True
 
     def config_widget(self):
-        import config
+        try:
+          import config
+        except:
+          from . import config
         return config.ConfigWidget(self.plugin_path, self.alfdir)
 
     def save_settings(self, config_widget):

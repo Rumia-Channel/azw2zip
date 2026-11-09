@@ -16,10 +16,34 @@
 import sys
 import binascii
 
-#@@CALIBRE_COMPAT_CODE@@
 
-from utilities import SafeUnbuffered
-from argv_utils import unicode_argv
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
+
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+if "calibre" in sys.modules:
+    # Explicitly set the package identifier so we are allowed to import stuff ...
+    __package__ = "calibre_plugins.dedrm"
+
+#@@CALIBRE_COMPAT_CODE_END@@
+
+try:
+    from .utilities import SafeUnbuffered
+    from .argv_utils import unicode_argv
+except ImportError:
+    from utilities import SafeUnbuffered
+    from argv_utils import unicode_argv
 
 letters = b'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'
 
@@ -69,18 +93,18 @@ def cli_main():
         print("Usage: kindlepid.py <Kindle Serial Number>/<iPhone/iPod Touch UDID>")
         return 1
     if len(serial)==16:
-        if serial.startswith("B") or serial.startswith("9"):
+        if serial.startswith(("B", "9", "G")):
             print("Kindle serial number detected")
         else:
             print("Warning: unrecognized serial number. Please recheck input.")
             return 1
-        pid = pidFromSerial(serial.encode("utf-8"),7)+'*'
-        print("Mobipocket PID for Kindle serial#{0} is {1}".format(serial,checksumPid(pid)))
+        pid = pidFromSerial(serial.encode("utf-8"),7)+b'*'
+        print("Mobipocket PID for Kindle serial#{0} is {1}".format(serial,checksumPid(pid).decode("utf-8")))
         return 0
     elif len(serial)==40:
         print("iPhone serial number (UDID) detected")
         pid = pidFromSerial(serial.encode("utf-8"),8)
-        print("Mobipocket PID for iPhone serial#{0} is {1}".format(serial,checksumPid(pid)))
+        print("Mobipocket PID for iPhone serial#{0} is {1}".format(serial,checksumPid(pid).decode("utf-8")))
         return 0
     print("Warning: unrecognized serial number. Please recheck input.")
     return 1

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# adobekey.pyw, version 7.4
+# adobekey.pyw, version 7.5
 # Copyright © 2009-2022 i♥cabbages, Apprentice Harper et al.
 
 # Released under the terms of the GNU General Public Licence, version 3
@@ -33,22 +33,46 @@
 #   7.2 - Fix decryption error on Python2 if there's unicode in the username
 #   7.3 - Fix OpenSSL in Wine
 #   7.4 - Remove OpenSSL support to only support PyCryptodome
+#   7.5 - Support both Adobe and ByteBooks ADEPT registry paths on Windows
 
 """
 Retrieve Adobe ADEPT user key.
 """
 
 __license__ = 'GPL v3'
-__version__ = '7.4'
+__version__ = '7.5'
 
 import sys, os, struct, getopt
 from base64 import b64decode
 
-#@@CALIBRE_COMPAT_CODE@@
 
+#@@CALIBRE_COMPAT_CODE_START@@
+import sys, os
 
-from utilities import SafeUnbuffered
-from argv_utils import unicode_argv
+# Explicitly allow importing everything ...
+if os.path.dirname(os.path.dirname(os.path.abspath(__file__))) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Bugfix for Calibre < 5:
+if "calibre" in sys.modules and sys.version_info[0] == 2:
+    from calibre.utils.config import config_dir
+    if os.path.join(config_dir, "plugins", "DeDRM.zip") not in sys.path:
+        sys.path.insert(0, os.path.join(config_dir, "plugins", "DeDRM.zip"))
+
+if "calibre" in sys.modules:
+    # Explicitly set the package identifier so we are allowed to import stuff ...
+    __package__ = "calibre_plugins.dedrm"
+
+#@@CALIBRE_COMPAT_CODE_END@@
+
+try:
+    from .utilities import SafeUnbuffered
+    from .argv_utils import unicode_argv
+except ImportError:
+    from utilities import SafeUnbuffered
+    from argv_utils import unicode_argv
 
 
 try:
@@ -86,8 +110,7 @@ if iswindows:
 
         return data[:-pad_len]
 
-    DEVICE_KEY_PATH = r'Software\Adobe\Adept\Device'
-    PRIVATE_LICENCE_KEY_PATH = r'Software\Adobe\Adept\Activation'
+    ADEPT_KEY_PATHS = (r'Software\Adobe\Adept', r'Software\ByteBooks\Adept')
 
     MAX_PATH = 255
 
@@ -134,7 +157,7 @@ if iswindows:
         return GetUserName
     GetUserName = GetUserName()
 
-    def GetUserName2():
+    def GetUserName2(adept_key_path=ADEPT_KEY_PATHS[0]):
         try:
             from winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER
         except ImportError:
@@ -148,8 +171,7 @@ if iswindows:
                 from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER
 
         try: 
-            DEVICE_KEY_PATH = r'Software\Adobe\Adept\Device'
-            regkey = OpenKey(HKEY_CURRENT_USER, DEVICE_KEY_PATH)
+            regkey = OpenKey(HKEY_CURRENT_USER, adept_key_path + r'\Device')
             userREG = QueryValueEx(regkey, 'username')[0].encode('utf-16-le')[::2]
             return userREG
         except: 
@@ -277,17 +299,35 @@ if iswindows:
     CryptUnprotectData = CryptUnprotectData()
 
     def adeptkeys():
+        keys = []
+        names = []
+        error = None
+        for adept_key_path in ADEPT_KEY_PATHS:
+            try:
+                newkeys, newnames = _adeptkeys(adept_key_path)
+            except Exception as e:
+                if error is None:
+                    error = e
+                continue
+            keys.extend(newkeys)
+            names.extend(newnames)
+        if len(keys) == 0:
+            raise error
+        print("Found {0:d} keys".format(len(keys)))
+        return keys, names
+
+    def _adeptkeys(adept_key_path):
         root = GetSystemDirectory().split('\\')[0] + '\\'
         serial = GetVolumeSerialNumber(root)
         vendor = cpuid0()
         signature = struct.pack('>I', cpuid1())[1:]
-        user = GetUserName2()
+        user = GetUserName2(adept_key_path)
         if user is None: 
             user = GetUserName()
         entropy = struct.pack('>I12s3s13s', serial, vendor, signature, user)
         cuser = winreg.HKEY_CURRENT_USER
         try:
-            regkey = winreg.OpenKey(cuser, DEVICE_KEY_PATH)
+            regkey = winreg.OpenKey(cuser, adept_key_path + r'\Device')
             device = winreg.QueryValueEx(regkey, 'key')[0]
         except (WindowsError, FileNotFoundError):
             raise ADEPTError("Adobe Digital Editions not activated")
@@ -296,7 +336,7 @@ if iswindows:
         keys = []
         names = []
         try:
-            plkroot = winreg.OpenKey(cuser, PRIVATE_LICENCE_KEY_PATH)
+            plkroot = winreg.OpenKey(cuser, adept_key_path + r'\Activation')
         except (WindowsError, FileNotFoundError):
             raise ADEPTError("Could not locate ADE activation")
 
@@ -345,7 +385,6 @@ if iswindows:
 
         if len(keys) == 0:
             raise ADEPTError('Could not locate privateLicenseKey')
-        print("Found {0:d} keys".format(len(keys)))
         return keys, names
 
 
